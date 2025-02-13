@@ -186,7 +186,7 @@ def print_menu():
     print("===================")
     print("1. Get Account Balance")
     print("2. View Transaction History")
-    print("3. View Balance History")
+    print("3. View DEX Trading History")
     print("4. Generate Vanity Address")
     print("0. Exit")
     print("===================")
@@ -235,110 +235,139 @@ def view_transactions_menu(api: SolscanAPI):
 
 def view_balance_history_menu(api: SolscanAPI):
     """
-    Handle the balance history menu option
+    Handle the DEX trading history analysis menu option
     """
     address = input("Enter Solana account address: ")
+    console = Console()
     
-    # First get current balance
-    current_balance = api.get_account_balance(address)
-    if current_balance is None:
-        api.console.print("[red]Failed to fetch current balance[/red]")
-        return
-        
-    # Then get transaction history
-    page_size = 10
-    all_transactions = []
+    headers = {
+        'accept': 'application/json, text/plain, */*',
+        'accept-language': 'en-GB,en;q=0.8',
+        'origin': 'https://solscan.io',
+        'priority': 'u=1, i',
+        'referer': 'https://solscan.io/',
+        'sec-ch-ua': '"Not(A:Brand";v="99", "Brave";v="133", "Chromium";v="133"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site',
+        'sec-gpc': '1',
+        'sol-aut': '4iOtUjKOhwGFLxtTMWPOVZB9dls0fKyJ0pVfH-hN',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
+    }
+
+    # Dictionary to store token trading data
+    token_data = {}
     page = 1
-    max_transactions = 100
+    total_trades = 0
     
-    api.console.print("\nFetching transactions...", style="yellow")
+    console.print("\n[yellow]Fetching DEX trading history...[/yellow]")
     
-    while len(all_transactions) < max_transactions:
-        transactions = api.get_account_transactions(address, page, page_size)
+    while True:
+        url = f'https://api-v2.solscan.io/v2/account/activity/dextrading'
+        params = {
+            'address': address,
+            'page': page,
+            'page_size': 100
+        }
         
-        if not transactions:
-            break
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+            data = response.json()
             
-        all_transactions.extend(transactions)
-        if len(transactions) < page_size:
-            break
-            
-        page += 1
-    
-    if all_transactions:
-        api.console.print(f"\nAnalyzing [green]{len(all_transactions)}[/green] transactions\n")
-        display_balance_history(all_transactions, current_balance, api.console, address)
-    else:
-        api.console.print("[red]Failed to fetch transactions or no transactions found[/red]")
-
-# Pre-compile regex patterns for better performance
-REGEX_CACHE = {}
-
-@njit(cache=True)
-def fast_check_pattern(public_key_bytes: npt.NDArray[np.uint8], pattern_bytes: npt.NDArray[np.uint8]) -> bool:
-    """JIT-compiled pattern matching for simple contains check"""
-    n, m = len(public_key_bytes), len(pattern_bytes)
-    for i in range(n - m + 1):
-        match = True
-        for j in range(m):
-            if public_key_bytes[i + j] != pattern_bytes[j]:
-                match = False
+            if not data.get('data') or not data['data'].get('items'):
                 break
-        if match:
-            return True
-    return False
-
-@njit(parallel=True, cache=True)
-def parallel_check_keypairs(public_keys: npt.NDArray[np.uint8], pattern: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
-    """Check multiple public keys in parallel using Numba, returns array of match flags"""
-    n = len(public_keys)
-    results = np.zeros(n, dtype=np.uint8)
-    
-    # Parallel loop over all keys
-    for i in prange(n):
-        if fast_check_pattern(public_keys[i], pattern):
-            results[i] = 1
-    
-    return results
-
-def batch_generate_keypairs(batch_size: int = 1000):
-    """Generate multiple keypairs at once for better efficiency"""
-    keypairs = []
-    for _ in range(batch_size):
-        signing_key = SigningKey.generate()
-        secret_key = bytes(signing_key)
-        verify_key = bytes(signing_key.verify_key)
-        keypairs.append(secret_key + verify_key)
-    return keypairs
-
-def worker_process(pattern: str, found_key: Value, result_queue: Queue, total_attempts: Value):
-    """Worker process to generate and check addresses in batches"""
-    try:
-        regex = re.compile(pattern)
-        batch_size = 1000  # Adjust based on your CPU
-        
-        while not found_key.value:
-            # Generate batch of keypairs
-            keypairs = batch_generate_keypairs(batch_size)
-            
-            # Process in smaller chunks to avoid memory issues
-            with total_attempts.get_lock():
-                total_attempts.value += batch_size
-            
-            # Check each keypair in the batch
-            for idx, keypair in enumerate(keypairs):
-                public_key = keypair[32:]  # Last 32 bytes
-                public_key_b58 = base58.b58encode(public_key).decode()
                 
-                if regex.search(public_key_b58):
-                    with found_key.get_lock():
-                        if not found_key.value:
-                            found_key.value = True
-                            result_queue.put(keypair)
-                            return
-                        
-    except Exception as e:
-        print(f"Worker error: {e}")
+            trades = data['data']['items']
+            if not trades:
+                break
+                
+            total_trades += len(trades)
+            console.print(f"[yellow]Processing page {page} ({len(trades)} trades)...[/yellow]")
+            
+            for trade in trades:
+                token_mint = trade.get('tokenMint')
+                token_symbol = trade.get('tokenSymbol', 'UNKNOWN')
+                token_name = trade.get('tokenName', 'Unknown Token')
+                timestamp = datetime.fromtimestamp(trade.get('blockTime', 0))
+                
+                if token_mint not in token_data:
+                    token_data[token_mint] = {
+                        'symbol': token_symbol,
+                        'name': token_name,
+                        'invested_sol': 0.0,
+                        'sold_sol': 0.0,
+                        'remaining_tokens': 0.0,
+                        'last_trade': timestamp,
+                        'trades': 0
+                    }
+                
+                amount = float(trade.get('tokenAmount', 0))
+                sol_value = float(trade.get('solValue', 0))
+                
+                if trade.get('actionType') == 'buy':
+                    token_data[token_mint]['invested_sol'] += sol_value
+                    token_data[token_mint]['remaining_tokens'] += amount
+                else:  # sell
+                    token_data[token_mint]['sold_sol'] += sol_value
+                    token_data[token_mint]['remaining_tokens'] -= amount
+                
+                token_data[token_mint]['trades'] += 1
+                token_data[token_mint]['last_trade'] = max(token_data[token_mint]['last_trade'], timestamp)
+            
+            page += 1
+            
+        except requests.exceptions.RequestException as e:
+            console.print(f"[red]Error fetching data: {str(e)}[/red]")
+            break
+    
+    if not token_data:
+        console.print("[red]No DEX trading history found[/red]")
+        return
+    
+    # Create and display the summary table
+    table = Table(title=f"DEX Trading Summary - Total Trades: {total_trades}")
+    
+    table.add_column("Token", style="cyan")
+    table.add_column("Invested (SOL)", justify="right", style="green")
+    table.add_column("Sold (SOL)", justify="right", style="red")
+    table.add_column("Profit/Loss", justify="right")
+    table.add_column("Remaining", justify="right", style="yellow")
+    table.add_column("# Trades", justify="right")
+    table.add_column("Last Trade", justify="left")
+    
+    # Sort by last trade date, most recent first
+    sorted_tokens = sorted(token_data.items(), key=lambda x: x[1]['last_trade'], reverse=True)
+    
+    for token_mint, data in sorted_tokens:
+        profit_loss = data['sold_sol'] - data['invested_sol']
+        profit_loss_color = "green" if profit_loss >= 0 else "red"
+        
+        table.add_row(
+            f"{data['symbol']} ({data['name'][:15]}...)",
+            f"{data['invested_sol']:.4f}",
+            f"{data['sold_sol']:.4f}",
+            f"[{profit_loss_color}]{profit_loss:.4f}[/{profit_loss_color}]",
+            f"{data['remaining_tokens']:.4f}",
+            str(data['trades']),
+            data['last_trade'].strftime('%Y-%m-%d %H:%M'),
+        )
+    
+    console.print("\n")
+    console.print(table)
+    
+    # Calculate and display totals
+    total_invested = sum(data['invested_sol'] for data in token_data.values())
+    total_sold = sum(data['sold_sol'] for data in token_data.values())
+    total_profit_loss = total_sold - total_invested
+    
+    console.print("\n[bold]Portfolio Summary:[/bold]")
+    console.print(f"Total Invested: [green]{total_invested:.4f} SOL[/green]")
+    console.print(f"Total Sold: [yellow]{total_sold:.4f} SOL[/yellow]")
+    console.print(f"Overall Profit/Loss: [{('green' if total_profit_loss >= 0 else 'red')}]{total_profit_loss:.4f} SOL[/]")
+    console.print(f"Total Number of Trades: [blue]{total_trades}[/blue]")
 
 def generate_vanity_address(pattern: str, console: Console) -> None:
     """

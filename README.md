@@ -1,12 +1,17 @@
 # Solana Research Tool
 
-A Python-based command-line tool for interacting with Solana blockchain. Features include account balance checking, transaction history viewing, balance history analysis, and vanity address generation.
+A Python-based command-line tool for interacting with Solana blockchain. Features include account balance checking, transaction history viewing, DEX trading analysis, and vanity address generation.
 
 ## Features
 
 - **Account Balance**: Check the SOL balance of any Solana address
 - **Transaction History**: View detailed transaction history with timestamps, amounts, and USD values
-- **Balance History**: Analyze historical balance changes over time
+- **DEX Trading Analysis**: Comprehensive analysis of DEX trading activity
+  - Per-token investment tracking
+  - Profit/Loss calculation
+  - Remaining token balances
+  - Trade history and statistics
+  - Portfolio summary
 - **Vanity Address Generator**: Generate Solana addresses matching custom patterns
   - Multi-core processing for faster generation
   - Phantom wallet compatible keypair format
@@ -55,13 +60,20 @@ Run the program:
      - From/To addresses
      - USD value
 
-3. **View Balance History**
-   - Enter a Solana address to see balance changes over time
-   - Displays:
-     - Historical balance changes
-     - Transaction timestamps
-     - Running balance
-     - Current balance
+3. **View DEX Trading History**
+   - Comprehensive analysis of DEX trading activity
+   - Shows for each token:
+     - Total SOL invested
+     - Total SOL received from sales
+     - Profit/Loss calculation
+     - Remaining token balance
+     - Number of trades
+     - Last trade timestamp
+   - Portfolio summary including:
+     - Total SOL invested across all tokens
+     - Total SOL received from all sales
+     - Overall portfolio profit/loss
+     - Total number of trades
 
 4. **Generate Vanity Address**
    - Create Solana addresses matching a custom pattern
