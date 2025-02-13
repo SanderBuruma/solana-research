@@ -206,12 +206,24 @@ def display_balance_history(transactions: List[Dict[str, Any]], current_balance:
     
     console.print(table)
 
+def format_token_amount(amount: float) -> str:
+    """Format token amount in k/m/b format"""
+    if amount >= 1_000_000_000:
+        return f"{amount/1_000_000_000:.1f}B"
+    elif amount >= 1_000_000:
+        return f"{amount/1_000_000:.1f}M"
+    elif amount >= 1_000:
+        return f"{amount/1_000:.1f}k"
+    else:
+        return f"{amount:.0f}"
+
 def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
     """
     Display DEX trading summary grouped by token
     """
     # Dictionary to track token stats
     token_stats = {}
+    SOL_ADDRESS = "So11111111111111111111111111111111111111112"
     
     for trade in trades:
         amount_info = trade.get('amount_info', {})
@@ -227,47 +239,54 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
         amount2 = float(amount_info.get('amount2', 0)) / (10 ** token2_decimals)
         trade_time = datetime.fromtimestamp(trade['block_time'])
         
-        # Track token1 (sold)
-        if token1 and token1 not in token_stats:
-            token_stats[token1] = {'invested': 0, 'sold': 0, 'remaining': 0, 'last_trade': None}
-        if token1:
-            token_stats[token1]['sold'] += amount1
-            if not token_stats[token1]['last_trade'] or trade_time > token_stats[token1]['last_trade']:
-                token_stats[token1]['last_trade'] = trade_time
+        # Initialize token stats if needed
+        for token in [token1, token2]:
+            if token and token not in token_stats:
+                token_stats[token] = {
+                    'sol_invested': 0,  # SOL spent to buy this token
+                    'sol_received': 0,  # SOL received from selling this token
+                    'tokens_bought': 0,  # Amount of tokens bought
+                    'tokens_sold': 0,    # Amount of tokens sold
+                    'last_trade': None
+                }
         
-        # Track token2 (bought)
-        if token2 and token2 not in token_stats:
-            token_stats[token2] = {'invested': 0, 'sold': 0, 'remaining': 0, 'last_trade': None}
-        if token2:
-            token_stats[token2]['invested'] += amount2
-            token_stats[token2]['remaining'] = token_stats[token2]['invested'] - token_stats[token2]['sold']
-            if not token_stats[token2]['last_trade'] or trade_time > token_stats[token2]['last_trade']:
-                token_stats[token2]['last_trade'] = trade_time
+        # Update stats based on trade direction
+        if token1 == SOL_ADDRESS:
+            # Sold SOL for tokens
+            if token2:
+                token_stats[token2]['sol_invested'] += amount1
+                token_stats[token2]['tokens_bought'] += amount2
+                token_stats[token2]['last_trade'] = max(trade_time, token_stats[token2]['last_trade']) if token_stats[token2]['last_trade'] else trade_time
+        elif token2 == SOL_ADDRESS:
+            # Sold tokens for SOL
+            if token1:
+                token_stats[token1]['sol_received'] += amount2
+                token_stats[token1]['tokens_sold'] += amount1
+                token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
     
     # Create and display the summary table
     table = Table(title="DEX Trading Summary")
     table.add_column("Token", justify="left", style="cyan")
-    table.add_column("Invested", justify="right", style="green")
-    table.add_column("Sold", justify="right", style="red")
-    table.add_column("Remaining", justify="right", style="yellow")
+    table.add_column("SOL Invested", justify="right", style="green")
+    table.add_column("SOL Received", justify="right", style="red")
+    table.add_column("Remaining Tokens", justify="right", style="yellow")
     table.add_column("Last Trade", justify="left", style="magenta")
     
     # Sort by last trade date
     sorted_tokens = sorted(
-        token_stats.items(),
+        [(k, v) for k, v in token_stats.items() if k != SOL_ADDRESS],
         key=lambda x: x[1]['last_trade'] if x[1]['last_trade'] else datetime.min,
         reverse=True
     )
     
     for token, stats in sorted_tokens:
-        # Special handling for SOL token
-        token_display = "SOL (Native)" if token == "So11111111111111111111111111111111111111112" else token
+        remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
         
         table.add_row(
-            token_display,
-            f"{stats['invested']:.6f}",
-            f"{stats['sold']:.6f}",
-            f"{stats['remaining']:.6f}",
+            token,
+            f"{stats['sol_invested']:.3f} ◎",
+            f"{stats['sol_received']:.3f} ◎",
+            format_token_amount(remaining_tokens),
             stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'
         )
     
