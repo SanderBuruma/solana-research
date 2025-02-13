@@ -223,9 +223,9 @@ def format_token_address(address: str) -> str:
         return "SOL"
     return f"{address[:4]}...{address[-4:]}"
 
-def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
+def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, wallet_address: str):
     """
-    Display DEX trading summary grouped by token
+    Display DEX trading summary grouped by token and save to CSV
     """
     # Dictionary to track token stats
     token_stats = {}
@@ -289,40 +289,59 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
         reverse=True
     )
     
+    # Track totals
+    total_invested = 0
+    total_received = 0
     total_profit = 0
     total_remaining = 0
     
-    for token, stats in sorted_tokens:
-        remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
-        sol_profit = stats['sol_received'] - stats['sol_invested']
-        remaining_value = remaining_tokens * stats['last_sol_rate']
+    # Prepare CSV data
+    os.makedirs('reports', exist_ok=True)
+    csv_file = f'reports/{wallet_address}.csv'
+    with open(csv_file, 'w') as f:
+        f.write("Token,SOL Invested,SOL Received,SOL Profit,Remaining Value,Last Trade\n")
         
-        total_profit += sol_profit
-        total_remaining += remaining_value
-        
-        profit_color = "green" if sol_profit >= 0 else "red"
-        
-        table.add_row(
-            format_token_address(token),
-            f"{stats['sol_invested']:.3f} ◎",
-            f"{stats['sol_received']:.3f} ◎",
-            f"[{profit_color}]{sol_profit:+.3f} ◎[/{profit_color}]",
-            f"{remaining_value:.3f} ◎",
-            stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'
-        )
+        for token, stats in sorted_tokens:
+            remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
+            sol_profit = stats['sol_received'] - stats['sol_invested']
+            remaining_value = remaining_tokens * stats['last_sol_rate']
+            
+            total_invested += stats['sol_invested']
+            total_received += stats['sol_received']
+            total_profit += sol_profit
+            total_remaining += remaining_value
+            
+            profit_color = "green" if sol_profit >= 0 else "red"
+            
+            # Add to table
+            table.add_row(
+                format_token_address(token),
+                f"{stats['sol_invested']:.3f} ◎",
+                f"{stats['sol_received']:.3f} ◎",
+                f"[{profit_color}]{sol_profit:+.3f} ◎[/{profit_color}]",
+                f"{remaining_value:.3f} ◎",
+                stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'
+            )
+            
+            # Write to CSV
+            f.write(f"{token},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'}\n")
     
-    # Add totals row
+        # Add totals to CSV
+        f.write(f"TOTAL,{total_invested:.3f},{total_received:.3f},{total_profit:.3f},{total_remaining:.3f},\n")
+    
+    # Add totals row to table
     table.add_row(
         "[bold]TOTAL[/bold]",
-        "",
-        "",
-        f"[{'green' if total_profit >= 0 else 'red'}]{total_profit:+.3f} ◎[/{'green' if total_profit >= 0 else 'red'}]",
-        f"{total_remaining:.3f} ◎",
+        f"[bold]{total_invested:.3f} ◎[/bold]",
+        f"[bold]{total_received:.3f} ◎[/bold]",
+        f"[bold {'green' if total_profit >= 0 else 'red'}]{total_profit:+.3f} ◎[/bold]",
+        f"[bold]{total_remaining:.3f} ◎[/bold]",
         "",
         end_section=True
     )
     
     console.print(table)
+    console.print(f"\n[yellow]Report saved to {csv_file}[/yellow]")
 
 def print_menu():
     """
@@ -390,7 +409,7 @@ def view_balance_history_menu(api: SolscanAPI):
     
     if trades:
         api.console.print(f"\nFound [green]{len(trades)}[/green] DEX trades\n")
-        display_dex_trading_summary(trades, api.console)
+        display_dex_trading_summary(trades, api.console, address)
     else:
         api.console.print("[red]No DEX trading history found[/red]")
 
