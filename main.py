@@ -217,6 +217,12 @@ def format_token_amount(amount: float) -> str:
     else:
         return f"{amount:.0f}"
 
+def format_token_address(address: str) -> str:
+    """Format token address to show first 4 and last 4 characters"""
+    if address == "So11111111111111111111111111111111111111112":
+        return "SOL"
+    return f"{address[:4]}...{address[-4:]}"
+
 def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
     """
     Display DEX trading summary grouped by token
@@ -247,7 +253,8 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
                     'sol_received': 0,  # SOL received from selling this token
                     'tokens_bought': 0,  # Amount of tokens bought
                     'tokens_sold': 0,    # Amount of tokens sold
-                    'last_trade': None
+                    'last_trade': None,
+                    'last_sol_rate': 0,  # Last known SOL/token rate
                 }
         
         # Update stats based on trade direction
@@ -256,21 +263,24 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
             if token2:
                 token_stats[token2]['sol_invested'] += amount1
                 token_stats[token2]['tokens_bought'] += amount2
+                token_stats[token2]['last_sol_rate'] = amount1 / amount2  # SOL per token
                 token_stats[token2]['last_trade'] = max(trade_time, token_stats[token2]['last_trade']) if token_stats[token2]['last_trade'] else trade_time
         elif token2 == SOL_ADDRESS:
             # Sold tokens for SOL
             if token1:
                 token_stats[token1]['sol_received'] += amount2
                 token_stats[token1]['tokens_sold'] += amount1
+                token_stats[token1]['last_sol_rate'] = amount2 / amount1  # SOL per token
                 token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
     
     # Create and display the summary table
     table = Table(title="DEX Trading Summary")
-    table.add_column("Token", justify="left", style="cyan")
+    table.add_column("Token", justify="left", style="cyan", width=12)
     table.add_column("SOL Invested", justify="right", style="green")
     table.add_column("SOL Received", justify="right", style="red")
-    table.add_column("Remaining Tokens", justify="right", style="yellow")
-    table.add_column("Last Trade", justify="left", style="magenta")
+    table.add_column("SOL Profit", justify="right", style="yellow")
+    table.add_column("Remaining Value", justify="right", style="magenta")
+    table.add_column("Last Trade", justify="left", style="blue")
     
     # Sort by last trade date
     sorted_tokens = sorted(
@@ -279,16 +289,38 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
         reverse=True
     )
     
+    total_profit = 0
+    total_remaining = 0
+    
     for token, stats in sorted_tokens:
         remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
+        sol_profit = stats['sol_received'] - stats['sol_invested']
+        remaining_value = remaining_tokens * stats['last_sol_rate']
+        
+        total_profit += sol_profit
+        total_remaining += remaining_value
+        
+        profit_color = "green" if sol_profit >= 0 else "red"
         
         table.add_row(
-            token,
+            format_token_address(token),
             f"{stats['sol_invested']:.3f} ◎",
             f"{stats['sol_received']:.3f} ◎",
-            format_token_amount(remaining_tokens),
+            f"[{profit_color}]{sol_profit:+.3f} ◎[/{profit_color}]",
+            f"{remaining_value:.3f} ◎",
             stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'
         )
+    
+    # Add totals row
+    table.add_row(
+        "[bold]TOTAL[/bold]",
+        "",
+        "",
+        f"[{'green' if total_profit >= 0 else 'red'}]{total_profit:+.3f} ◎[/{'green' if total_profit >= 0 else 'red'}]",
+        f"{total_remaining:.3f} ◎",
+        "",
+        end_section=True
+    )
     
     console.print(table)
 
