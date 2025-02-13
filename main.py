@@ -215,34 +215,34 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
     
     for trade in trades:
         amount_info = trade.get('amount_info', {})
-        if not amount_info or 'routers' not in amount_info:
+        if not amount_info:
             continue
             
-        # Get the first and last router for input/output tokens
-        first_route = amount_info['routers'][0]
-        last_route = amount_info['routers'][-1]
-        
-        # Extract token information
-        input_token = first_route['token1']
-        output_token = last_route['token2']
-        input_amount = float(first_route['amount1']) / (10 ** first_route['token1_decimals'])
-        output_amount = float(last_route['amount2']) / (10 ** last_route['token2_decimals'])
+        # Extract token information from amount_info
+        token1 = amount_info.get('token1')
+        token2 = amount_info.get('token2')
+        token1_decimals = amount_info.get('token1_decimals', 0)
+        token2_decimals = amount_info.get('token2_decimals', 0)
+        amount1 = float(amount_info.get('amount1', 0)) / (10 ** token1_decimals)
+        amount2 = float(amount_info.get('amount2', 0)) / (10 ** token2_decimals)
         trade_time = datetime.fromtimestamp(trade['block_time'])
         
-        # Track input token (sold)
-        if input_token not in token_stats:
-            token_stats[input_token] = {'invested': 0, 'sold': 0, 'remaining': 0, 'last_trade': None}
-        token_stats[input_token]['sold'] += input_amount
-        if not token_stats[input_token]['last_trade'] or trade_time > token_stats[input_token]['last_trade']:
-            token_stats[input_token]['last_trade'] = trade_time
+        # Track token1 (sold)
+        if token1 and token1 not in token_stats:
+            token_stats[token1] = {'invested': 0, 'sold': 0, 'remaining': 0, 'last_trade': None}
+        if token1:
+            token_stats[token1]['sold'] += amount1
+            if not token_stats[token1]['last_trade'] or trade_time > token_stats[token1]['last_trade']:
+                token_stats[token1]['last_trade'] = trade_time
         
-        # Track output token (bought)
-        if output_token not in token_stats:
-            token_stats[output_token] = {'invested': 0, 'sold': 0, 'remaining': 0, 'last_trade': None}
-        token_stats[output_token]['invested'] += output_amount
-        token_stats[output_token]['remaining'] = token_stats[output_token]['invested'] - token_stats[output_token]['sold']
-        if not token_stats[output_token]['last_trade'] or trade_time > token_stats[output_token]['last_trade']:
-            token_stats[output_token]['last_trade'] = trade_time
+        # Track token2 (bought)
+        if token2 and token2 not in token_stats:
+            token_stats[token2] = {'invested': 0, 'sold': 0, 'remaining': 0, 'last_trade': None}
+        if token2:
+            token_stats[token2]['invested'] += amount2
+            token_stats[token2]['remaining'] = token_stats[token2]['invested'] - token_stats[token2]['sold']
+            if not token_stats[token2]['last_trade'] or trade_time > token_stats[token2]['last_trade']:
+                token_stats[token2]['last_trade'] = trade_time
     
     # Create and display the summary table
     table = Table(title="DEX Trading Summary")
@@ -260,8 +260,11 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console):
     )
     
     for token, stats in sorted_tokens:
+        # Special handling for SOL token
+        token_display = "SOL (Native)" if token == "So11111111111111111111111111111111111111112" else token
+        
         table.add_row(
-            token,
+            token_display,
             f"{stats['invested']:.6f}",
             f"{stats['sold']:.6f}",
             f"{stats['remaining']:.6f}",
