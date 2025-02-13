@@ -119,6 +119,25 @@ class SolscanAPI:
         
         return all_trades
 
+    def get_token_price(self, token_address: str) -> Optional[Dict[str, Any]]:
+        """
+        Get token price and metadata from Solscan API
+        Returns a dictionary containing price in USDT and other token information
+        """
+        data = self._make_request(f'account?address={token_address}')
+        if data and data.get('success'):
+            metadata = data.get('metadata', {})
+            token_info = data.get('data', {}).get('tokenInfo', {})
+            token_metadata = data.get('metadata', {}).get('tokens', {}).get(token_address, {})
+            
+            return {
+                'price_usdt': token_metadata.get('price_usdt', 0),
+                'decimals': token_info.get('decimals', 0),
+                'name': metadata.get('data', {}).get('name', ''),
+                'symbol': metadata.get('data', {}).get('symbol', '')
+            }
+        return None
+
 def display_transactions_table(transactions: List[Dict[str, Any]], console: Console, input_address: str):
     """
     Display transactions in a rich table format
@@ -286,6 +305,10 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                     'tokens_sold': 0,    # Amount of tokens sold
                     'last_trade': None,
                     'last_sol_rate': 0,  # Last known SOL/token rate
+                    'token_price_usdt': 0,  # Current token price in USDT
+                    'decimals': 0,  # Token decimals
+                    'name': '',  # Token name
+                    'symbol': ''  # Token symbol
                 }
         
         # Update stats based on trade direction
@@ -304,6 +327,22 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 token_stats[token1]['last_sol_rate'] = amount2 / amount1  # SOL per token
                 token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
     
+    # Fetch current token prices for tokens with remaining balance
+    api = SolscanAPI()
+    sol_price = api.get_token_price("So11111111111111111111111111111111111111112")
+    sol_price_usdt = sol_price.get('price_usdt', 0) if sol_price else 0
+    
+    console.print("\n[yellow]Fetching current token prices...[/yellow]")
+    for token, stats in token_stats.items():
+        remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
+        if remaining_tokens >= 100:  # Only fetch price if significant remaining balance
+            token_data = api.get_token_price(token)
+            if token_data:
+                stats['token_price_usdt'] = token_data.get('price_usdt', 0)
+                stats['decimals'] = token_data.get('decimals', 0)
+                stats['name'] = token_data.get('name', '')
+                stats['symbol'] = token_data.get('symbol', '')
+    
     # Create and display the summary table
     table = Table(title="DEX Trading Summary")
     table.add_column("Token", justify="left", style="cyan", width=12)
@@ -312,6 +351,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     table.add_column("SOL Profit", justify="right", style="yellow")
     table.add_column("Remaining Value", justify="right", style="magenta")
     table.add_column("Total Profit", justify="right", style="blue")
+    table.add_column("Token Price", justify="right", style="cyan")
     table.add_column("Last Trade", justify="left", style="dim")
     
     # Sort by last trade date
@@ -331,13 +371,19 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     os.makedirs('reports', exist_ok=True)
     csv_file = f'reports/{wallet_address}.csv'
     with open(csv_file, 'w') as f:
-        f.write("Token,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Last Trade\n")
+        f.write("Token,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Token Price (USDT),Last Trade\n")
         
         for token, stats in sorted_tokens:
             remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
             sol_profit = stats['sol_received'] - stats['sol_invested']
-            remaining_value = remaining_tokens * stats['last_sol_rate']
-            total_token_profit = sol_profit + remaining_value  # Include remaining value in total profit
+            
+            # Calculate remaining value using current token price if available
+            if stats['token_price_usdt'] > 0 and sol_price_usdt > 0:
+                remaining_value = (remaining_tokens * stats['token_price_usdt']) / sol_price_usdt
+            else:
+                remaining_value = remaining_tokens * stats['last_sol_rate']
+            
+            total_token_profit = sol_profit + remaining_value
             
             total_invested += stats['sol_invested']
             total_received += stats['sol_received']
@@ -347,6 +393,9 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             profit_color = "green" if sol_profit >= 0 else "red"
             total_profit_color = "green" if total_token_profit >= 0 else "red"
             
+            # Format token price display
+            token_price_display = f"${stats['token_price_usdt']:.6f}" if stats['token_price_usdt'] > 0 else "N/A"
+            
             # Add to table
             table.add_row(
                 format_token_address(token),
@@ -355,15 +404,16 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 f"[{profit_color}]{sol_profit:+.3f} ◎[/{profit_color}]",
                 f"{remaining_value:.3f} ◎",
                 f"[{total_profit_color}]{total_token_profit:+.3f} ◎[/{total_profit_color}]",
+                token_price_display,
                 stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'
             )
             
             # Write to CSV
-            f.write(f"{token},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{total_token_profit:.3f},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'}\n")
+            f.write(f"{token},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{total_token_profit:.3f},{stats['token_price_usdt']:.6f},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'}\n")
     
         # Add totals to CSV
         total_overall_profit = total_profit + total_remaining
-        f.write(f"TOTAL,{total_invested:.3f},{total_received:.3f},{total_profit:.3f},{total_remaining:.3f},{total_overall_profit:.3f},\n")
+        f.write(f"TOTAL,{total_invested:.3f},{total_received:.3f},{total_profit:.3f},{total_remaining:.3f},{total_overall_profit:.3f},,\n")
     
     # Add totals row to table
     profit_style = "green" if total_profit >= 0 else "red"
@@ -375,6 +425,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         f"[bold][{profit_style}]{total_profit:+.3f} ◎[/{profit_style}][/bold]",
         f"[bold]{total_remaining:.3f} ◎[/bold]",
         f"[bold][{total_profit_style}]{total_overall_profit:+.3f} ◎[/{total_profit_style}][/bold]",
+        "",
         "",
         end_section=True
     )
@@ -398,11 +449,16 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         '30d': 0
     }
     
-    # Calculate remaining value for each period
+    # Calculate remaining value for each period using current token prices
     current_time = datetime.now().timestamp()
     for token, stats in token_stats.items():
         remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
-        remaining_value = remaining_tokens * stats['last_sol_rate']
+        
+        # Calculate remaining value using current token price if available
+        if stats['token_price_usdt'] > 0 and sol_price_usdt > 0:
+            remaining_value = (remaining_tokens * stats['token_price_usdt']) / sol_price_usdt
+        else:
+            remaining_value = remaining_tokens * stats['last_sol_rate']
         
         if stats['last_trade']:
             last_trade_time = stats['last_trade'].timestamp()
