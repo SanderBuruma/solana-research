@@ -1,3 +1,17 @@
+import base58
+import re
+import time
+import ctypes
+from datetime import datetime
+from multiprocessing import Process, Value, Queue, cpu_count
+from nacl.signing import SigningKey
+import numpy as np
+import numpy.typing as npt
+from numba import njit, prange
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
 import requests
 import json
 from typing import Dict, Any, Optional, List, Tuple
@@ -497,75 +511,21 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     
     console.print(roi_table)
 
-def print_menu():
+def print_usage():
     """
-    Print the main menu options
+    Print usage information
     """
-    print("\nSolana Research Tool")
-    print("===================")
-    print("1. Get Account Balance")
-    print("2. View Transaction History")
-    print("3. View Balance History")
-    print("4. Generate Vanity Address")
-    print("0. Exit")
-    print("===================")
-
-def get_account_balance_menu(api: SolscanAPI):
-    """
-    Handle the account balance menu option
-    """
-    address = input("Enter Solana account address: ")
-    balance = api.get_account_balance(address)
-    
-    if balance is not None:
-        api.console.print(f"\nAccount Balance: [green]{balance:.9f}[/green] SOL")
-    else:
-        api.console.print("[red]Failed to fetch account balance[/red]")
-
-def view_transactions_menu(api: SolscanAPI):
-    """
-    Handle the transaction history menu option
-    """
-    address = input("Enter Solana account address: ")
-    page_size = 10
-    all_transactions = []
-    page = 1
-    max_transactions = 100
-    
-    api.console.print("\nFetching transactions...", style="yellow")
-    
-    while len(all_transactions) < max_transactions:
-        transactions = api.get_account_transactions(address, page, page_size)
-        
-        if not transactions:
-            break
-            
-        all_transactions.extend(transactions)
-        if len(transactions) < page_size:  # If we got fewer transactions than requested, we've hit the end
-            break
-            
-        page += 1
-    
-    if all_transactions:
-        api.console.print(f"\nFound [green]{len(all_transactions)}[/green] transactions\n")
-        display_transactions_table(all_transactions, api.console, address)
-    else:
-        api.console.print("[red]Failed to fetch transactions or no transactions found[/red]")
-
-def view_balance_history_menu(api: SolscanAPI):
-    """
-    Handle the balance history menu option
-    """
-    address = input("Enter Solana account address: ")
-    
-    api.console.print("\nFetching DEX trading history...", style="yellow")
-    trades = api.get_dex_trading_history(address)
-    
-    if trades:
-        api.console.print(f"\nFound [green]{len(trades)}[/green] DEX trades\n")
-        display_dex_trading_summary(trades, api.console, address)
-    else:
-        api.console.print("[red]No DEX trading history found[/red]")
+    print("\nSolana Research Tool Usage:")
+    print("==========================")
+    print("-1 <address>     Get Account Balance")
+    print("-2 <address>     View Transaction History")
+    print("-3 <address>     View Balance History")
+    print("-4 <pattern>     Generate Vanity Address")
+    print("\nExamples:")
+    print("python main.py -1 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY")
+    print("python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY")
+    print("python main.py -4 \"abc$\"")
+    print("==========================")
 
 # Pre-compile regex patterns for better performance
 REGEX_CACHE = {}
@@ -636,7 +596,7 @@ def worker_process(pattern: str, found_key: Value, result_queue: Queue, total_at
     except Exception as e:
         print(f"Worker error: {e}")
 
-def generate_vanity_address(pattern: str, console: Console) -> None:
+def generate_vanity_address(pattern: str, console: Console, test_mode: bool = False) -> None:
     """
     Generate a Solana address matching the specified regex pattern using multiple processes
     with JIT compilation and batch processing
@@ -653,21 +613,23 @@ def generate_vanity_address(pattern: str, console: Console) -> None:
     result_queue = Queue()
     
     # Use all cores except one for system
-    num_processes = max(1, cpu_count() - 1)
+    num_processes = 1 if test_mode else max(1, cpu_count() - 1)
     
-    console.print(f"\n[yellow]Starting {num_processes} optimized worker processes...[/yellow]")
-    console.print("[yellow]Using JIT compilation and batch processing[/yellow]")
-    console.print("[yellow]Press Ctrl+C to stop searching[/yellow]\n")
+    if not test_mode:
+        console.print(f"\n[yellow]Starting {num_processes} optimized worker processes...[/yellow]")
+        console.print("[yellow]Using JIT compilation and batch processing[/yellow]")
+        console.print("[yellow]Press Ctrl+C to stop searching[/yellow]\n")
     
     # Start worker processes
     processes = []
     start_time = time.time()
     
-    # Warm up the JIT compiler
-    console.print("[yellow]Warming up JIT compiler...[/yellow]")
-    dummy_data = np.zeros((1, 32), dtype=np.uint8)
-    dummy_pattern = np.zeros(1, dtype=np.uint8)
-    parallel_check_keypairs(dummy_data, dummy_pattern)
+    if not test_mode:
+        # Warm up the JIT compiler
+        console.print("[yellow]Warming up JIT compiler...[/yellow]")
+        dummy_data = np.zeros((1, 32), dtype=np.uint8)
+        dummy_pattern = np.zeros(1, dtype=np.uint8)
+        parallel_check_keypairs(dummy_data, dummy_pattern)
     
     for _ in range(num_processes):
         p = Process(target=worker_process, args=(pattern, found_key, result_queue, total_attempts))
@@ -676,25 +638,30 @@ def generate_vanity_address(pattern: str, console: Console) -> None:
     
     # Monitor progress and update display
     try:
-        with Live(console=console, refresh_per_second=4) as live:
-            while not found_key.value:
-                elapsed = time.time() - start_time
-                attempts = total_attempts.value
-                rate = attempts / elapsed if elapsed > 0 else 0
-                
-                status = Panel(f"""[yellow]Searching with {num_processes} optimized processes:
+        if test_mode:
+            # In test mode, just wait for result
+            while not found_key.value and result_queue.empty():
+                time.sleep(0.1)
+        else:
+            with Live(console=console, refresh_per_second=4) as live:
+                while not found_key.value:
+                    elapsed = time.time() - start_time
+                    attempts = total_attempts.value
+                    rate = attempts / elapsed if elapsed > 0 else 0
+                    
+                    status = Panel(f"""[yellow]Searching with {num_processes} optimized processes:
 Pattern: [magenta]{pattern}[/magenta]
 Attempts: [blue]{attempts:,}[/blue]
 Time: [blue]{elapsed:.2f}[/blue] seconds
 Combined Rate: [blue]{rate:.0f}[/blue] addresses/second
 Rate per core: [blue]{rate/num_processes:.0f}[/blue] addresses/second
 Using: JIT compilation + Batch processing[/yellow]""")
-                
-                live.update(status)
-                time.sleep(0.25)
-                
-                if not result_queue.empty():
-                    break
+                    
+                    live.update(status)
+                    time.sleep(0.25)
+                    
+                    if not result_queue.empty():
+                        break
         
         # Get the result if found
         if not result_queue.empty():
@@ -713,7 +680,12 @@ Using: JIT compilation + Batch processing[/yellow]""")
             rate = attempts / elapsed if elapsed > 0 else 0
             
             match = re.search(pattern, public_key_b58)
-            result = Panel(f"""[green]Found matching address![/green]
+            
+            if test_mode:
+                console.print(f"Public Key: {public_key_b58}")
+                console.print(f"Private Key: {private_key_b58}")
+            else:
+                result = Panel(f"""[green]Found matching address![/green]
 Public Key: [cyan]{public_key_b58}[/cyan]
 Private Key (Phantom Compatible): [yellow]{private_key_b58}[/yellow]
 Pattern: [magenta]{pattern}[/magenta]
@@ -724,16 +696,16 @@ Combined Rate: [blue]{rate:.0f}[/blue] addresses/second
 Rate per core: [blue]{rate/num_processes:.0f}[/blue] addresses/second
 
 [green]✓ This private key can be imported directly into Phantom wallet[/green]""")
-            
-            # Also save to file
-            with open("found_addresses.txt", "a") as f:
-                f.write(f"\nFound at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:\n")
-                f.write(f"Public Key: {public_key_b58}\n")
-                f.write(f"Private Key: {private_key_b58}\n")
-                f.write("-" * 80 + "\n")
-            
-            console.print(result)
-            console.print("\n[yellow]Address details have been saved to found_addresses.txt[/yellow]")
+                
+                # Also save to file
+                with open("found_addresses.txt", "a") as f:
+                    f.write(f"\nFound at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:\n")
+                    f.write(f"Public Key: {public_key_b58}\n")
+                    f.write(f"Private Key: {private_key_b58}\n")
+                    f.write("-" * 80 + "\n")
+                
+                console.print(result)
+                console.print("\n[yellow]Address details have been saved to found_addresses.txt[/yellow]")
     
     except KeyboardInterrupt:
         console.print("\n[yellow]Search cancelled by user[/yellow]")
@@ -745,45 +717,88 @@ Rate per core: [blue]{rate/num_processes:.0f}[/blue] addresses/second
             p.terminate()
             p.join()
 
-def generate_vanity_address_menu(console: Console):
-    """
-    Handle the vanity address generation menu option
-    """
-    console.print("\nRegex Pattern Examples:")
-    console.print("- End pattern: 'abc$'")
-    console.print("- Start pattern: '^abc'")
-    console.print("- Numbers: '\\d{3}'")
-    console.print("- Letters: '[a-f]{4}'")
-    console.print("- Complex: 'abc.*xyz'")
-    
-    pattern = input("\nEnter regex pattern for the address: ")
-    if not pattern:
-        console.print("[red]Pattern cannot be empty[/red]")
-        return
-    
-    generate_vanity_address(pattern, console)
-
 def main():
+    import sys
+    
+    if len(sys.argv) < 2:
+        print_usage()
+        sys.exit(1)
+        
     api = SolscanAPI()
     console = Console()
     
-    while True:
-        print_menu()
-        choice = input("\nEnter your choice (0-4): ")
-        
-        if choice == "1":
-            get_account_balance_menu(api)
-        elif choice == "2":
-            view_transactions_menu(api)
-        elif choice == "3":
-            view_balance_history_menu(api)
-        elif choice == "4":
-            generate_vanity_address_menu(console)
-        elif choice == "0":
-            print("\nGoodbye!")
-            break
+    option = sys.argv[1]
+    
+    if option == "-1":
+        if len(sys.argv) != 3:
+            print("Error: Address required for account balance")
+            print_usage()
+            sys.exit(1)
+        address = sys.argv[2]
+        balance = api.get_account_balance(address)
+        if balance is not None:
+            api.console.print(f"\nAccount Balance: [green]{balance:.9f}[/green] SOL")
         else:
-            print("\nInvalid choice. Please try again.")
+            api.console.print("[red]Failed to fetch account balance[/red]")
+            
+    elif option == "-2":
+        if len(sys.argv) != 3:
+            print("Error: Address required for transaction history")
+            print_usage()
+            sys.exit(1)
+        address = sys.argv[2]
+        page_size = 10
+        all_transactions = []
+        page = 1
+        max_transactions = 100
+        
+        api.console.print("\nFetching transactions...", style="yellow")
+        
+        while len(all_transactions) < max_transactions:
+            transactions = api.get_account_transactions(address, page, page_size)
+            if not transactions:
+                break
+            all_transactions.extend(transactions)
+            if len(transactions) < page_size:
+                break
+            page += 1
+        
+        if all_transactions:
+            api.console.print(f"\nFound [green]{len(all_transactions)}[/green] transactions\n")
+            display_transactions_table(all_transactions, api.console, address)
+        else:
+            api.console.print("[red]Failed to fetch transactions or no transactions found[/red]")
+            
+    elif option == "-3":
+        if len(sys.argv) != 3:
+            print("Error: Address required for balance history")
+            print_usage()
+            sys.exit(1)
+        address = sys.argv[2]
+        api.console.print("\nFetching DEX trading history...", style="yellow")
+        trades = api.get_dex_trading_history(address)
+        
+        if trades:
+            api.console.print(f"\nFound [green]{len(trades)}[/green] DEX trades\n")
+            display_dex_trading_summary(trades, api.console, address)
+        else:
+            api.console.print("[red]No DEX trading history found[/red]")
+            
+    elif option == "-4":
+        if len(sys.argv) != 3:
+            print("Error: Pattern required for vanity address")
+            print_usage()
+            sys.exit(1)
+        pattern = sys.argv[2]
+        if not pattern:
+            console.print("[red]Pattern cannot be empty[/red]")
+            sys.exit(1)
+        generate_vanity_address(pattern, console)
+        
+    else:
+        print(f"Error: Unknown option {option}")
+        print_usage()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
