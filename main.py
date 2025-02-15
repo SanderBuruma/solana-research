@@ -108,11 +108,12 @@ class SolscanAPI:
 
     def get_dex_trading_history(self, address: str) -> List[Dict[str, Any]]:
         """
-        Get complete DEX trading history for an account
+        Get complete DEX trading history for an account, up to 1 month old
         """
         page = 1
         page_size = 100
         all_trades = []
+        one_month_ago = datetime.now().timestamp() - (30 * 86400)  # 30 days in seconds
         
         while True:
             endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}'
@@ -124,8 +125,14 @@ class SolscanAPI:
             trades = data['data']
             if not trades:
                 break
-                
-            all_trades.extend(trades)
+            
+            # Check each trade's timestamp before adding
+            for trade in trades:
+                if trade['block_time'] < one_month_ago:
+                    # Stop gathering data if we reach trades older than a month
+                    return all_trades
+                all_trades.append(trade)
+            
             if len(trades) < page_size:
                 break
                 
