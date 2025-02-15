@@ -511,6 +511,47 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     
     console.print(roi_table)
 
+    # Count transactions
+    total_defi_txs = len(trades)
+    non_sol_txs = 0
+
+    for trade in trades:
+        amount_info = trade.get('amount_info', {})
+        if not amount_info:
+            continue
+            
+        token1 = amount_info.get('token1')
+        token2 = amount_info.get('token2')
+        
+        # Count if neither token is SOL
+        if token1 and token2 and token1 not in SOL_ADDRESSES and token2 not in SOL_ADDRESSES:
+            non_sol_txs += 1
+
+    # Display transaction summary
+    summary_table = Table(show_header=True, header_style="bold")
+    summary_table.add_column("Transaction Type", style="cyan")
+    summary_table.add_column("Count", justify="right", style="yellow")
+    summary_table.add_column("Percentage", justify="right", style="green")
+
+    summary_table.add_row(
+        "Total DeFi Transactions",
+        str(total_defi_txs),
+        "100%"
+    )
+    summary_table.add_row(
+        "Non-SOL Token Swaps",
+        str(non_sol_txs),
+        f"{(non_sol_txs/total_defi_txs*100):.1f}%" if total_defi_txs > 0 else "0%"
+    )
+    summary_table.add_row(
+        "SOL-Involved Swaps",
+        str(total_defi_txs - non_sol_txs),
+        f"{((total_defi_txs-non_sol_txs)/total_defi_txs*100):.1f}%" if total_defi_txs > 0 else "0%"
+    )
+
+    console.print("\n[bold]Transaction Summary[/bold]")
+    console.print(summary_table)
+
 def print_usage():
     """
     Print usage information
