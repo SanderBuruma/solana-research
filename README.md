@@ -1,18 +1,33 @@
 # Solana Research Tool
 
-A Python-based command-line tool for interacting with Solana blockchain. Features include account balance checking, transaction history viewing, balance history analysis, and vanity address generation.
+A Python-based command-line tool for interacting with the Solana blockchain. Features include account balance checking, transaction history viewing, balance history analysis, vanity address generation, and DeFi trading summary analysis.
 
 ## Features
 
-- **Account Balance**: Check the SOL balance of any Solana address
-- **Transaction History**: View detailed transaction history with timestamps, amounts, and USD values
-- **Balance History**: Analyze historical balance changes over time
-- **Vanity Address Generator**: Generate Solana addresses matching custom patterns
-  - Multi-core processing for faster generation
-  - Phantom wallet compatible keypair format
-  - Regex pattern support
-  - Progress tracking and statistics
-  - Auto-saves found addresses
+- **-1 <address>**: Get Account Balance
+  - Input a Solana address to check its current SOL balance (displayed with 9 decimal precision).
+
+- **-2 <address>**: View Transaction History
+  - Retrieve the last 100 transactions of a Solana address.
+  - Displays timestamp, transaction type, amount in SOL, from/to addresses, and USD value.
+
+- **-3 <address>**: View Balance History
+  - Analyze historical balance fluctuations of a Solana address based on its DEX trading activity.
+
+- **-4 <pattern>**: Generate Vanity Address
+  - Generate Solana addresses that match a custom regex pattern.
+  - Utilizes multi-core processing, JIT compilation, and batch processing for faster generation.
+  - Generates keypairs compatible with the Phantom wallet.
+  - Found addresses are automatically saved to `found_addresses.txt`.
+
+- **-5 <address> [<address> ...]**: View DeFi Summary for Wallets
+  - Accept one or more wallet addresses and produce a summary table.
+  - For each address, the table displays:
+    - 24H ROI %
+    - 7D ROI %
+    - 30D ROI % and absolute 30D ROI (profit/loss in SOL)
+    - Number of non-SOL swaps
+    - Total number of swaps (overall DEX trading activity)
 
 ## Installation
 
@@ -40,83 +55,41 @@ Run the program:
 .\venv\Scripts\python.exe main.py
 ```
 
-### Main Menu Options
+### Example Commands
 
-1. **Get Account Balance**
-   - Enter a Solana address to check its current SOL balance
-   - Displays balance with 9 decimal precision
+- Check account balance:
+```bash
+.\venv\Scripts\python.exe main.py -1 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
+```
 
-2. **View Transaction History**
-   - Enter a Solana address to view its transaction history
-   - Shows last 100 transactions with:
-     - Timestamp
-     - Transaction type
-     - Amount (SOL)
-     - From/To addresses
-     - USD value
+- View transaction history:
+```bash
+.\venv\Scripts\python.exe main.py -2 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
+```
 
-3. **View Balance History**
-   - Enter a Solana address to see balance changes over time
-   - Displays:
-     - Historical balance changes
-     - Transaction timestamps
-     - Running balance
-     - Current balance
+- View balance history:
+```bash
+.\venv\Scripts\python.exe main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
+```
 
-4. **Generate Vanity Address**
-   - Create Solana addresses matching a custom pattern
-   - Supports regular expressions (regex)
-   - Pattern Examples:
-     - End pattern: 'abc$'
-     - Start pattern: '^abc'
-     - Numbers: '\d{3}'
-     - Letters: '[a-f]{4}'
-     - Complex: 'abc.*xyz'
-   - Found addresses are saved to `found_addresses.txt`
-   - Generated private keys are compatible with Phantom wallet
+- Generate vanity address:
+```bash
+.\venv\Scripts\python.exe main.py -4 "^Sol"
+```
 
-### Example Patterns
-
-- `^Sol` - Address starting with "Sol"
-- `[0-9]{3}$` - Address ending with 3 numbers
-- `^[A-Z]{4}` - Address starting with 4 uppercase letters
-- `abc.*xyz` - Address containing "abc" followed by "xyz"
+- View DeFi summary for multiple wallets:
+```bash
+.\venv\Scripts\python.exe main.py -5 walletAddr1 walletAddr2 walletAddr3
+```
 
 ## Performance
 
-The vanity address generator utilizes:
-- Multi-core processing
-- JIT compilation
-- Batch processing
-- Optimized pattern matching
-
-Performance varies based on:
-- Pattern complexity
-- CPU cores available
-- System resources
+The tool leverages advanced optimizations including multi-core processing, JIT compilation using Numba, and batch processing to improve performance, especially in the vanity address generator and DeFi summary calculation.
 
 ## Security
 
-- Private keys are generated securely using Ed25519 cryptography
-- Keys are saved locally in `found_addresses.txt`
-- No sensitive data is transmitted externally
-- API calls are made only to public Solscan endpoints
-
-## Dependencies
-
-- `pynacl`: Ed25519 cryptography
-- `base58`: Address encoding
-- `rich`: Terminal UI
-- `requests`: API communication
-- `numpy`: Numerical operations
-- `numba`: JIT compilation
-
-## Notes
-
-- Keep your private keys secure and never share them
-- Generated addresses are fully compatible with Phantom wallet
-- The tool respects Solscan API rate limits
-- Progress can be interrupted safely with Ctrl+C
+- Private keys are securely generated using Ed25519 cryptography and are saved locally in `found_addresses.txt`.
+- No sensitive data is transmitted externally. Keep your private keys secure.
 
 ## Contributing
 
