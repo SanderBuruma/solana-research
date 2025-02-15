@@ -115,6 +115,11 @@ class SolscanAPI:
             }
         return None
 
+    def get_token_accounts(self, address: str) -> Optional[Dict[str, Any]]:
+        """Get token accounts for a given Solana address."""
+        endpoint = f'account/tokenaccounts?address={address}&page=1&page_size=480&type=token&hide_zero=true'
+        return self._make_request(endpoint)
+
 def display_transactions_table(transactions: List[Dict[str, Any]], console: Console, input_address: str):
     """
     Display transactions in a rich table format

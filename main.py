@@ -29,7 +29,6 @@ def main():
         
     api = SolscanAPI()
     console = Console()
-    
     option = sys.argv[1]
     
     if option == "-1":
@@ -43,7 +42,34 @@ def main():
             api.console.print(f"\nAccount Balance: [green]{balance:.9f}[/green] SOL")
         else:
             api.console.print("[red]Failed to fetch account balance[/red]")
+        
+        sol_price_data = api.get_token_price("So11111111111111111111111111111111111111112")
+        sol_price = sol_price_data.get("price_usdt", 0) if sol_price_data else 0
 
+        # Fetch held token accounts for the address
+        token_data = api.get_token_accounts(address)
+        if token_data and token_data.get("success") and token_data.get("data"):
+            tokens = token_data["data"].get("tokenAccounts", [])
+            if tokens:
+                from rich.table import Table
+                token_table = Table(title="Held Tokens")
+                token_table.add_column("Token Name", style="cyan")
+                token_table.add_column("Token Symbol", style="magenta")
+                token_table.add_column("Balance", justify="right", style="yellow")
+                token_table.add_column("Value in SOL", justify="right", style="green")
+                for token in tokens:
+                    token_name = token.get("tokenName", "Unknown")
+                    token_symbol = token.get("tokenSymbol", "Unknown")
+                    balance_token = token.get("balance", 0)
+                    usd_value = token.get("value", 0)
+                    true_value_in_sol = (usd_value / sol_price) if sol_price > 0 else usd_value
+                    if balance_token == 0 or true_value_in_sol < 0.01:
+                        continue
+                    token_table.add_row(token_name, token_symbol, f"{balance_token}", f"{true_value_in_sol:.3f}")
+                console.print(token_table)
+        else:
+            console.print("[yellow]No token account data found.[/yellow]")
+        
     elif option == "-2":
         if len(sys.argv) != 3:
             print("Error: Address required for transaction history")
@@ -68,7 +94,7 @@ def main():
             display_transactions_table(all_transactions, api.console, address)
         else:
             api.console.print("[red]Failed to fetch transactions or no transactions found[/red]")
-
+        
     elif option == "-3":
         if len(sys.argv) != 3:
             print("Error: Address required for balance history")
@@ -82,7 +108,7 @@ def main():
             display_dex_trading_summary(trades, api.console, address)
         else:
             api.console.print("[red]No DEX trading history found[/red]")
-
+        
     elif option == "-4":
         if len(sys.argv) != 3:
             print("Error: Pattern required for vanity address")
@@ -93,7 +119,7 @@ def main():
             console.print("[red]Pattern cannot be empty[/red]")
             sys.exit(1)
         generate_vanity_address(pattern, console)
-
+        
     elif option == "-5":
         if len(sys.argv) < 3:
             print("Error: At least one wallet address is required for option -5")
@@ -109,13 +135,10 @@ def main():
         summary_table.add_column("30D ROI", justify="right", style="yellow")
         summary_table.add_column("nSol Swaps", justify="right", style="green")
         summary_table.add_column("Total Swaps", justify="right", style="green")
-
         SOL_ADDRESSES = {"So11111111111111111111111111111111111111112", "So11111111111111111111111111111111111111111"}
         now = datetime.now().timestamp()
-
         for addr in addresses:
             trades = api.get_dex_trading_history(addr)
-            # Initialize period stats
             period_stats = {
                 "24h": {"invested": 0.0, "received": 0.0, "start": now - 86400},
                 "7d": {"invested": 0.0, "received": 0.0, "start": now - 7 * 86400},
@@ -157,7 +180,6 @@ def main():
             roi_7d = compute_roi(period_stats["7d"])
             roi_30d = compute_roi(period_stats["30d"])
             roi_30d_abs = period_stats["30d"]["received"] - period_stats["30d"]["invested"]
-            
             summary_table.add_row(
                 addr,
                 f"{roi_24h:.2f}%",
@@ -168,7 +190,7 @@ def main():
                 str(total_swaps)
             )
         console.print(summary_table)
-
+        
     else:
         print(f"Error: Unknown option {option}")
         print_usage()
