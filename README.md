@@ -31,6 +31,7 @@ A Python-based command-line tool for interacting with the Solana blockchain. Fea
     - 30D ROI % and absolute 30D ROI (profit/loss in SOL)
     - Number of non-SOL swaps
     - Total number of swaps (overall DEX trading activity)
+  - Saves results to a timestamped CSV file in `reports/` directory (format: YYYYMMDDHHmm-option5.csv)
 
 - **-6 <token_address>**: Get Holder Addresses
   - Fetch a list of holder addresses for a specific token using BullX API.

@@ -173,6 +173,9 @@ def main():
             # Use command line arguments as addresses
             addresses = sys.argv[2:]
 
+        # Store results for CSV export
+        results = []
+        
         from rich.table import Table
         summary_table = Table(title="DeFi Summary for Wallets")
         summary_table.add_column("Address", style="cyan")
@@ -228,6 +231,17 @@ def main():
             roi_30d = compute_roi(period_stats["30d"])
             roi_30d_abs = period_stats["30d"]["received"] - period_stats["30d"]["invested"]
             
+            # Store result for CSV
+            results.append({
+                "Address": addr,
+                "24H ROI %": f"{roi_24h:.2f}",
+                "7D ROI %": f"{roi_7d:.2f}",
+                "30D ROI %": f"{roi_30d:.2f}",
+                "30D ROI": f"{roi_30d_abs:.3f}",
+                "nSol Swaps": non_sol_swaps,
+                "Total Swaps": total_swaps
+            })
+            
             summary_table.add_row(
                 addr,
                 f"{roi_24h:.2f}%",
@@ -237,7 +251,22 @@ def main():
                 str(non_sol_swaps),
                 str(total_swaps)
             )
+        
+        # Print the table
         console.print(summary_table)
+        
+        # Save to CSV
+        import csv
+        os.makedirs('reports', exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d%H%M')
+        csv_filename = f'reports/{timestamp}-option5.csv'
+        
+        with open(csv_filename, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=results[0].keys() if results else [])
+            writer.writeheader()
+            writer.writerows(results)
+        
+        console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
 
     elif option == "-6":
         import requests
@@ -306,10 +335,10 @@ def main():
             console.print(f"[red]Error fetching data: {str(e)}[/red]")
             sys.exit(1)
 
-    else:
-        print(f"Error: Unknown option {option}")
-        print_usage()
-        sys.exit(1)
+        else:
+            print(f"Error: Unknown option {option}")
+            print_usage()
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
