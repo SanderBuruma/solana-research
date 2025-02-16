@@ -16,9 +16,11 @@ def print_usage():
     print("-4 <pattern>     Generate Vanity Address")
     print("-5 <address>     View DeFi Summary for Wallets")
     print("\nExamples:")
-    print("python main.py -1 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY")
-    print("python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY")
+    print("python main.py -1 <address>")
+    print("python main.py -2 <address>")
+    print("python main.py -3 <address>")
     print("python main.py -4 \"abc$\"")
+    print("python main.py -5 <address1> <address2> <address3>")
     print("==========================")
 
 def main():
@@ -26,11 +28,11 @@ def main():
     if len(sys.argv) < 2:
         print_usage()
         sys.exit(1)
-        
+
     api = SolscanAPI()
     console = Console()
     option = sys.argv[1]
-    
+
     if option == "-1":
         if len(sys.argv) != 3:
             print("Error: Address required for account balance")
@@ -42,21 +44,17 @@ def main():
             api.console.print(f"\nAccount Balance: [green]{balance:.9f}[/green] SOL")
         else:
             api.console.print("[red]Failed to fetch account balance[/red]")
-        
+
         sol_price_data = api.get_token_price("So11111111111111111111111111111111111111112")
         sol_price = sol_price_data.get("price_usdt", 0) if sol_price_data else 0
 
-        # Fetch held token accounts for the address
+        # Fetch held token accounts for the address and aggregate token SOL value
         token_data = api.get_token_accounts(address)
+        total_tokens_value = 0.0
+        tokens_to_display = []
         if token_data and token_data.get("success") and token_data.get("data"):
             tokens = token_data["data"].get("tokenAccounts", [])
             if tokens:
-                from rich.table import Table
-                token_table = Table(title="Held Tokens")
-                token_table.add_column("Token Name", style="cyan")
-                token_table.add_column("Token Symbol", style="magenta")
-                token_table.add_column("Balance", justify="right", style="yellow")
-                token_table.add_column("Value in SOL", justify="right", style="green")
                 for token in tokens:
                     token_name = token.get("tokenName", "Unknown")
                     token_symbol = token.get("tokenSymbol", "Unknown")
@@ -65,11 +63,31 @@ def main():
                     true_value_in_sol = (usd_value / sol_price) if sol_price > 0 else usd_value
                     if balance_token == 0 or true_value_in_sol < 0.01:
                         continue
+                    total_tokens_value += true_value_in_sol
+                    tokens_to_display.append((token_name, token_symbol, balance_token, true_value_in_sol))
+                
+                # Compute total SOL balance
+                total_sol = (balance if balance is not None else 0) + total_tokens_value
+                
+                # Print summary with aligned numbers
+                summary = (f"\nAccount SOL: {balance:15.9f} SOL\n"
+                         f"Token SOL:   {total_tokens_value:15.9f} SOL\n"
+                         f"Total SOL:   {total_sol:15.9f} SOL")
+                console.print(summary)
+                
+                # Display token table
+                from rich.table import Table
+                token_table = Table(title="\nHeld Tokens")
+                token_table.add_column("Token Name", style="cyan")
+                token_table.add_column("Token Symbol", style="magenta")
+                token_table.add_column("Balance", justify="right", style="yellow")
+                token_table.add_column("Value in SOL", justify="right", style="green")
+                for token_name, token_symbol, balance_token, true_value_in_sol in tokens_to_display:
                     token_table.add_row(token_name, token_symbol, f"{balance_token}", f"{true_value_in_sol:.3f}")
                 console.print(token_table)
         else:
             console.print("[yellow]No token account data found.[/yellow]")
-        
+
     elif option == "-2":
         if len(sys.argv) != 3:
             print("Error: Address required for transaction history")
@@ -94,7 +112,7 @@ def main():
             display_transactions_table(all_transactions, api.console, address)
         else:
             api.console.print("[red]Failed to fetch transactions or no transactions found[/red]")
-        
+
     elif option == "-3":
         if len(sys.argv) != 3:
             print("Error: Address required for balance history")
@@ -108,7 +126,7 @@ def main():
             display_dex_trading_summary(trades, api.console, address)
         else:
             api.console.print("[red]No DEX trading history found[/red]")
-        
+
     elif option == "-4":
         if len(sys.argv) != 3:
             print("Error: Pattern required for vanity address")
@@ -119,7 +137,7 @@ def main():
             console.print("[red]Pattern cannot be empty[/red]")
             sys.exit(1)
         generate_vanity_address(pattern, console)
-        
+
     elif option == "-5":
         if len(sys.argv) < 3:
             print("Error: At least one wallet address is required for option -5")
@@ -180,6 +198,7 @@ def main():
             roi_7d = compute_roi(period_stats["7d"])
             roi_30d = compute_roi(period_stats["30d"])
             roi_30d_abs = period_stats["30d"]["received"] - period_stats["30d"]["invested"]
+            
             summary_table.add_row(
                 addr,
                 f"{roi_24h:.2f}%",
@@ -190,7 +209,7 @@ def main():
                 str(total_swaps)
             )
         console.print(summary_table)
-        
+
     else:
         print(f"Error: Unknown option {option}")
         print_usage()
