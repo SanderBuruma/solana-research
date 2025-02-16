@@ -23,6 +23,8 @@ A Python-based command-line tool for interacting with the Solana blockchain. Fea
 
 - **-5 <address> [<address> ...]**: View DeFi Summary for Wallets
   - Accept one or more wallet addresses and produce a summary table.
+  - Can read addresses from a text file (e.g., `addresses.txt`) or directly from command line.
+  - Automatically extracts Solana addresses from text files using regex pattern.
   - For each address, the table displays:
     - 24H ROI %
     - 7D ROI %
@@ -96,6 +98,8 @@ Run the program:
 - View DeFi summary for multiple wallets:
 ```bash
 .\venv\Scripts\python.exe main.py -5 walletAddr1 walletAddr2 walletAddr3
+# Or using a text file containing addresses:
+.\venv\Scripts\python.exe main.py -5 addresses.txt
 ```
 
 - Get holder addresses for a token:

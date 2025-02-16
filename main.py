@@ -146,7 +146,33 @@ def main():
             print("Error: At least one wallet address is required for option -5")
             print_usage()
             sys.exit(1)
-        addresses = sys.argv[2:]
+
+        addresses = []
+        first_arg = sys.argv[2]
+
+        # Check if first argument is a .txt file
+        if first_arg.endswith('.txt'):
+            import re
+            try:
+                with open(first_arg, 'r') as f:
+                    content = f.read()
+                    # Find all Solana addresses (base58 strings of 43-44 characters)
+                    found_addresses = re.findall(r'\b[a-zA-Z0-9]{43,44}\b', content)
+                    if not found_addresses:
+                        console.print(f"[red]No valid Solana addresses found in {first_arg}[/red]")
+                        sys.exit(1)
+                    addresses.extend(found_addresses)
+                    console.print(f"[green]Found {len(addresses)} addresses in {first_arg}[/green]")
+            except FileNotFoundError:
+                console.print(f"[red]Error: File {first_arg} not found[/red]")
+                sys.exit(1)
+            except Exception as e:
+                console.print(f"[red]Error reading file: {str(e)}[/red]")
+                sys.exit(1)
+        else:
+            # Use command line arguments as addresses
+            addresses = sys.argv[2:]
+
         from rich.table import Table
         summary_table = Table(title="DeFi Summary for Wallets")
         summary_table.add_column("Address", style="cyan")
