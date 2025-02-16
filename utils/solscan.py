@@ -327,13 +327,14 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     
     # Create and display the summary table
     table = Table(title="DEX Trading Summary")
-    table.add_column("Token", justify="left", style="cyan", width=12)
+    table.add_column("Token", style="cyan", width=12)
     table.add_column("SOL Invested", justify="right", style="green")
     table.add_column("SOL Received", justify="right", style="red")
     table.add_column("SOL Profit", justify="right", style="yellow")
     table.add_column("Remaining Value", justify="right", style="magenta")
     table.add_column("Total Profit", justify="right", style="blue")
     table.add_column("Token Price", justify="right", style="cyan")
+    table.add_column("Trades", justify="right", style="green")
     table.add_column("Last Trade", justify="left", style="dim")
     
     # Sort by last trade date
@@ -348,12 +349,13 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     total_received = 0
     total_profit = 0
     total_remaining = 0
+    total_trades = 0
     
     # Prepare CSV data
     os.makedirs('reports', exist_ok=True)
     csv_file = f'reports/{wallet_address}.csv'
     with open(csv_file, 'w') as f:
-        f.write("Token,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Token Price (USDT),Last Trade\n")
+        f.write("Token,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Token Price (USDT),Trades,Last Trade\n")
         
         for token, stats in sorted_tokens:
             remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
@@ -366,6 +368,12 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 remaining_value = remaining_tokens * stats['last_sol_rate']
             
             total_token_profit = sol_profit + remaining_value
+            
+            # Calculate number of trades for this token
+            token_trades = sum(1 for trade in trades if 
+                trade.get('amount_info', {}).get('token1') == token or 
+                trade.get('amount_info', {}).get('token2') == token)
+            total_trades += token_trades
             
             total_invested += stats['sol_invested']
             total_received += stats['sol_received']
@@ -387,15 +395,16 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 f"{remaining_value:.3f} ◎",
                 f"[{total_profit_color}]{total_token_profit:+.3f} ◎[/{total_profit_color}]",
                 token_price_display,
+                str(token_trades),
                 stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'
             )
             
             # Write to CSV
-            f.write(f"{token},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{total_token_profit:.3f},{stats['token_price_usdt']:.6f},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'}\n")
+            f.write(f"{token},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{total_token_profit:.3f},{stats['token_price_usdt']:.6f},{token_trades},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'}\n")
     
         # Add totals to CSV
         total_overall_profit = total_profit + total_remaining
-        f.write(f"TOTAL,{total_invested:.3f},{total_received:.3f},{total_profit:.3f},{total_remaining:.3f},{total_overall_profit:.3f},,\n")
+        f.write(f"TOTAL,{total_invested:.3f},{total_received:.3f},{total_profit:.3f},{total_remaining:.3f},{total_overall_profit:.3f},,{total_trades},\n")
     
     # Add totals row to table
     profit_style = "green" if total_profit >= 0 else "red"
@@ -408,6 +417,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         f"[bold]{total_remaining:.3f} ◎[/bold]",
         f"[bold][{total_profit_style}]{total_overall_profit:+.3f} ◎[/{total_profit_style}][/bold]",
         "",
+        f"[bold]{total_trades}[/bold]",
         "",
         end_section=True
     )
