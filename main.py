@@ -196,8 +196,17 @@ def main():
         summary_table.add_column("Total Swaps", justify="right", style="green")
         SOL_ADDRESSES = {"So11111111111111111111111111111111111111112", "So11111111111111111111111111111111111111111"}
         now = datetime.now().timestamp()
-        for addr in addresses:
+        
+        total_wallets = len(addresses)
+        for idx, addr in enumerate(addresses, 1):
+            console.print(f"\n[yellow]Processing wallet {idx}/{total_wallets}: [cyan]{addr}[/cyan][/yellow]")
             trades = api.get_dex_trading_history(addr)
+            if trades:
+                console.print(f"Found [green]{len(trades)}[/green] DEX trades")
+            else:
+                console.print("[red]No DEX trading history found[/red]")
+                continue
+                
             period_stats = {
                 "24h": {"invested": 0.0, "received": 0.0, "start": now - 86400},
                 "7d": {"invested": 0.0, "received": 0.0, "start": now - 7 * 86400},
