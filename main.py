@@ -17,7 +17,7 @@ def print_usage():
     print("-3 <address>     View Balance History")
     print("-4 <pattern>     Generate Vanity Address")
     print("-5 <address>     View DeFi Summary for Wallets")
-    print("-6              Get Holder Addresses")
+    print("-6              Get Holder Addresses using bullX (must provide auth token from request headers findable through the network console)")
     print("\nExamples:")
     print("python main.py -1 <address>")
     print("python main.py -2 <address>")
