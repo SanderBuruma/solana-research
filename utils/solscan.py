@@ -1,6 +1,6 @@
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from rich.console import Console
 from rich.table import Table
 from typing import Dict, Any, Optional, List, Tuple
@@ -224,6 +224,31 @@ def format_token_address(address: str) -> str:
         return "SOL"
     return f"{address[:4]}...{address[-4:]}"
 
+def format_time_difference(first: datetime, last: datetime) -> str:
+    """Format time difference between two dates in a human-readable format"""
+    diff = last - first
+    days = diff.days
+    hours = diff.seconds // 3600
+    minutes = (diff.seconds % 3600) // 60
+    
+    if days > 0:
+        return f"{days}d {hours}h {minutes}m"
+    elif hours > 0:
+        return f"{hours}h {minutes}m"
+    else:
+        return f"{minutes}m"
+
+def get_hold_time_color(first: datetime, last: datetime) -> str:
+    """Determine color for hold time based on duration"""
+    diff = last - first
+    total_minutes = diff.days * 1440 + diff.seconds // 60  # Convert to total minutes
+    
+    if total_minutes < 2:
+        return "red"
+    elif total_minutes < 10:
+        return "yellow"
+    return "green"
+
 def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, wallet_address: str):
     """
     Display DEX trading summary grouped by token and save to CSV
@@ -331,7 +356,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     # Create and display the summary table
     table = Table(title="DEX Trading Summary")
     table.add_column("Token", style="cyan", width=12)
-    table.add_column("First Trade", justify="left", style="blue")
+    table.add_column("Hold Time", justify="left", style="blue")
     table.add_column("Last Trade", justify="left", style="dim")
     table.add_column("SOL Invested", justify="right", style="green")
     table.add_column("SOL Received", justify="right", style="red")
@@ -389,10 +414,16 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             # Format token price display
             token_price_display = f"${stats['token_price_usdt']:.6f}" if stats['token_price_usdt'] > 0 else "N/A"
             
+            # Format hold time with color
+            hold_time = format_time_difference(stats['first_trade'], stats['last_trade']) if stats['first_trade'] and stats['last_trade'] else 'N/A'
+            if hold_time != 'N/A':
+                hold_time_color = get_hold_time_color(stats['first_trade'], stats['last_trade'])
+                hold_time = f"[{hold_time_color}]{hold_time}[/{hold_time_color}]"
+            
             # Add to table
             table.add_row(
                 format_token_address(token),
-                stats['first_trade'].strftime('%Y-%m-%d %H:%M') if stats['first_trade'] else 'N/A',
+                hold_time,
                 stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A',
                 f"{stats['sol_invested']:.3f} ◎",
                 f"{stats['sol_received']:.3f} ◎",
@@ -403,8 +434,8 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 str(token_trades)
             )
             
-            # Write to CSV
-            f.write(f"{token},{stats['first_trade'].strftime('%Y-%m-%d %H:%M') if stats['first_trade'] else 'N/A'},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{total_token_profit:.3f},{stats['token_price_usdt']:.6f},{token_trades}\n")
+            # Write to CSV (keep both absolute and relative times)
+            f.write(f"{token},{stats['first_trade'].strftime('%Y-%m-%d %H:%M') if stats['first_trade'] else 'N/A'},{format_time_difference(stats['first_trade'], stats['last_trade']) if stats['first_trade'] and stats['last_trade'] else 'N/A'},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{total_token_profit:.3f},{stats['token_price_usdt']:.6f},{token_trades}\n")
     
         # Add totals to CSV
         total_overall_profit = total_profit + total_remaining
@@ -516,6 +547,39 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     summary_table.add_column("Count", justify="right", style="yellow")
     summary_table.add_column("Percentage", justify="right", style="green")
 
+    # Calculate average time between first and last trade for each token
+    total_duration = timedelta()
+    tokens_with_multiple_trades = 0
+    earliest_trade = None
+    latest_trade = None
+
+    for token, stats in token_stats.items():
+        if stats['first_trade'] and stats['last_trade'] and stats['first_trade'] != stats['last_trade']:
+            duration = stats['last_trade'] - stats['first_trade']
+            total_duration += duration
+            tokens_with_multiple_trades += 1
+            
+            # Track overall trading timespan
+            if not earliest_trade or stats['first_trade'] < earliest_trade:
+                earliest_trade = stats['first_trade']
+            if not latest_trade or stats['last_trade'] > latest_trade:
+                latest_trade = stats['last_trade']
+
+    # Calculate averages
+    avg_token_duration = total_duration / tokens_with_multiple_trades if tokens_with_multiple_trades > 0 else timedelta()
+    
+    # Format duration for display
+    def format_duration(td):
+        days = td.days
+        hours = td.seconds // 3600
+        minutes = (td.seconds % 3600) // 60
+        if days > 0:
+            return f"{days}d {hours}h {minutes}m"
+        elif hours > 0:
+            return f"{hours}h {minutes}m"
+        else:
+            return f"{minutes}m"
+
     summary_table.add_row(
         "Total DeFi Transactions",
         str(total_defi_txs),
@@ -531,6 +595,21 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         str(total_defi_txs - non_sol_txs),
         f"{((total_defi_txs-non_sol_txs)/total_defi_txs*100):.1f}%" if total_defi_txs > 0 else "0%"
     )
+
+    if earliest_trade and latest_trade:
+        total_trading_span = latest_trade - earliest_trade
+        summary_table.add_section()
+        summary_table.add_row(
+            "Total Trading Timespan",
+            format_duration(total_trading_span),
+            ""
+        )
+        if tokens_with_multiple_trades > 0:
+            summary_table.add_row(
+                "Avg Token Hold Time",
+                format_duration(avg_token_duration),
+                ""
+            )
 
     console.print("\n[bold]Transaction Summary[/bold]")
     console.print(summary_table)
