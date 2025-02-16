@@ -36,6 +36,7 @@ A Python-based command-line tool for interacting with the Solana blockchain. Fea
   - Displays:
     - List of all holder addresses
     - Total number of holders found
+  - Saves all addresses to `found_addresses_6.txt` with timestamp and summary
 
 ## Installation
 

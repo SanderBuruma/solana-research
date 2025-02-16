@@ -259,11 +259,22 @@ def main():
             response.raise_for_status()
             holders_data = response.json()
             
+            # Save addresses to file
+            with open("found_addresses_6.txt", "w") as f:
+                f.write(f"Token Holder Addresses for {token_address}\n")
+                f.write("=" * 50 + "\n")
+                f.write(f"Found at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:\n\n")
+                for entry in holders_data:
+                    f.write(f"{entry['address']}\n")
+                f.write("\n" + "=" * 50 + "\n")
+                f.write(f"Total Addresses Found: {len(holders_data)}\n")
+            
             console.print("\n[yellow]Found Holder Addresses:[/yellow]")
             for entry in holders_data:
                 console.print(f"[cyan]{entry['address']}[/cyan]")
             
             console.print(f"\n[green]Total Addresses Found: {len(holders_data)}[/green]")
+            console.print(f"[yellow]Addresses have been saved to found_addresses_6.txt[/yellow]")
             
         except requests.exceptions.RequestException as e:
             console.print(f"[red]Error fetching data: {str(e)}[/red]")
