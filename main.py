@@ -1,5 +1,7 @@
 from rich.console import Console
 from datetime import datetime
+from dotenv import load_dotenv
+import os
 
 from utils.solscan import SolscanAPI, display_dex_trading_summary, display_transactions_table
 from utils.vanity import generate_vanity_address
@@ -15,6 +17,7 @@ def print_usage():
     print("-3 <address>     View Balance History")
     print("-4 <pattern>     Generate Vanity Address")
     print("-5 <address>     View DeFi Summary for Wallets")
+    print("-6              Get Holder Addresses")
     print("\nExamples:")
     print("python main.py -1 <address>")
     print("python main.py -2 <address>")
@@ -209,6 +212,56 @@ def main():
                 str(total_swaps)
             )
         console.print(summary_table)
+
+    elif option == "-6":
+        import requests
+        import json
+        
+        # Load environment variables
+        load_dotenv()
+        auth_token = os.getenv('BULLX_AUTH_TOKEN')
+        if not auth_token:
+            console.print("[red]Error: BULLX_AUTH_TOKEN not found in .env file[/red]")
+            sys.exit(1)
+        
+        url = "https://api-neo.bullx.io/v2/api/holdersSummaryV2"
+        
+        headers = {
+            "accept": "application/json, text/plain, */*",
+            "accept-language": "en-GB,en;q=0.9",
+            "authorization": f"Bearer {auth_token}",
+            "content-type": "application/json",
+            "origin": "https://neo.bullx.io",
+            "referer": "https://neo.bullx.io/",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+        }
+        
+        data = {
+            "name": "holdersSummaryV2",
+            "data": {
+                "tokenAddress": "7LyN1qLLAVZWLcm6XscRve6SrnmbU5YtdA6axv6Rpump",
+                "sortBy": "pnlUSD",
+                "chainId": 1399811149,
+                "filters": {
+                    "tagsFilters": []
+                }
+            }
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            holders_data = response.json()
+            
+            console.print("\n[yellow]Found Holder Addresses:[/yellow]")
+            for entry in holders_data:
+                console.print(f"[cyan]{entry['address']}[/cyan]")
+            
+            console.print(f"\n[green]Total Addresses Found: {len(holders_data)}[/green]")
+            
+        except requests.exceptions.RequestException as e:
+            console.print(f"[red]Error fetching data: {str(e)}[/red]")
+            sys.exit(1)
 
     else:
         print(f"Error: Unknown option {option}")
