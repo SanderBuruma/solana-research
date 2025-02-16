@@ -541,6 +541,20 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         if token1 and token2 and token1 not in SOL_ADDRESSES and token2 not in SOL_ADDRESSES:
             non_sol_txs += 1
 
+    # Calculate median profit and loss
+    profits = []
+    losses = []
+    for token, stats in token_stats.items():
+        sol_profit = stats['sol_received'] - stats['sol_invested']
+        if sol_profit > 0:
+            profits.append(sol_profit)
+        elif sol_profit < 0:
+            losses.append(abs(sol_profit))  # Store absolute value of losses
+    
+    # Calculate medians
+    median_profit = sorted(profits)[len(profits)//2] if profits else 0
+    median_loss = sorted(losses)[len(losses)//2] if losses else 0
+
     # Display transaction summary
     summary_table = Table(show_header=True, header_style="bold")
     summary_table.add_column("Transaction Type", style="cyan")
@@ -596,9 +610,23 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         f"{((total_defi_txs-non_sol_txs)/total_defi_txs*100):.1f}%" if total_defi_txs > 0 else "0%"
     )
 
+    # Add section for profit/loss statistics
+    summary_table.add_section()
+    if profits:
+        summary_table.add_row(
+            "Median Profit per Token",
+            f"[green]+{median_profit:.3f} ◎[/green]",
+            f"({len(profits)} tokens)"
+        )
+    if losses:
+        summary_table.add_row(
+            "Median Loss per Token",
+            f"[red]-{median_loss:.3f} ◎[/red]",
+            f"({len(losses)} tokens)"
+        )
+
     if earliest_trade and latest_trade:
         total_trading_span = latest_trade - earliest_trade
-        summary_table.add_section()
         summary_table.add_row(
             "Total Trading Timespan",
             format_duration(total_trading_span),
