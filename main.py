@@ -216,6 +216,12 @@ def main():
     elif option == "-6":
         import requests
         import json
+
+        if len(sys.argv) < 3:
+            print("Error: One token contract address is required for option -6")
+            print_usage()
+            sys.exit(1)
+        token_address = sys.argv[2:]
         
         # Load environment variables
         load_dotenv()
@@ -239,7 +245,7 @@ def main():
         data = {
             "name": "holdersSummaryV2",
             "data": {
-                "tokenAddress": "7LyN1qLLAVZWLcm6XscRve6SrnmbU5YtdA6axv6Rpump",
+                "tokenAddress": token_address,
                 "sortBy": "pnlUSD",
                 "chainId": 1399811149,
                 "filters": {
