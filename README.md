@@ -13,6 +13,7 @@ A Python-based command-line tool for interacting with the Solana blockchain. Fea
 
 - **-3 <address>**: View Balance History
   - Analyze historical balance fluctuations of a Solana address based on its DEX trading activity.
+  - Shows detailed trading summary including number of trades per token.
 
 - **-4 <pattern>**: Generate Vanity Address
   - Generate Solana addresses that match a custom regex pattern.
@@ -28,6 +29,13 @@ A Python-based command-line tool for interacting with the Solana blockchain. Fea
     - 30D ROI % and absolute 30D ROI (profit/loss in SOL)
     - Number of non-SOL swaps
     - Total number of swaps (overall DEX trading activity)
+
+- **-6 <token_address>**: Get Holder Addresses
+  - Fetch a list of holder addresses for a specific token using BullX API.
+  - Requires authentication token in `.env` file.
+  - Displays:
+    - List of all holder addresses
+    - Total number of holders found
 
 ## Installation
 
@@ -47,6 +55,13 @@ python -m venv venv
 ```bash
 pip install -r requirements.txt
 ```
+
+4. Set up environment variables:
+   - Create a `.env` file in the project root
+   - Add your BullX authentication token:
+     ```
+     BULLX_AUTH_TOKEN=your_token_here
+     ```
 
 ## Usage
 
@@ -82,6 +97,11 @@ Run the program:
 .\venv\Scripts\python.exe main.py -5 walletAddr1 walletAddr2 walletAddr3
 ```
 
+- Get holder addresses for a token:
+```bash
+.\venv\Scripts\python.exe main.py -6 7LyN1qLLAVZWLcm6XscRve6SrnmbU5YtdA6axv6Rpump
+```
+
 ## Performance
 
 The tool leverages advanced optimizations including multi-core processing, JIT compilation using Numba, and batch processing to improve performance, especially in the vanity address generator and DeFi summary calculation.
@@ -90,6 +110,7 @@ The tool leverages advanced optimizations including multi-core processing, JIT c
 
 - Private keys are securely generated using Ed25519 cryptography and are saved locally in `found_addresses.txt`.
 - No sensitive data is transmitted externally. Keep your private keys secure.
+- API tokens are stored in `.env` file and not committed to version control.
 
 ## Contributing
 
