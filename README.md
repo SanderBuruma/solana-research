@@ -29,8 +29,10 @@ A Python-based command-line tool for interacting with the Solana blockchain. Fea
     - 24H ROI %
     - 7D ROI %
     - 30D ROI % and absolute 30D ROI (profit/loss in SOL)
+    - Win Rate (% of tokens traded profitably)
     - Number of non-SOL swaps
     - Total number of swaps (overall DEX trading activity)
+  - Win Rate is color-coded: green for ≥50%, red for <50%
   - Saves results to a timestamped CSV file in `reports/` directory (format: YYYYMMDDHHmm-option5.csv)
 
 - **-6 <token_address>**: Get Holder Addresses

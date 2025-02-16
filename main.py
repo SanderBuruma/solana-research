@@ -6,6 +6,14 @@ import os
 from utils.solscan import SolscanAPI, display_dex_trading_summary, display_transactions_table
 from utils.vanity import generate_vanity_address
 
+def is_sol_token(token: str) -> bool:
+    """Check if a token address is SOL"""
+    SOL_ADDRESSES = {
+        "So11111111111111111111111111111111111111112",
+        "So11111111111111111111111111111111111111111"
+    }
+    return token in SOL_ADDRESSES
+
 def print_usage():
     """
     Print usage information
@@ -183,6 +191,7 @@ def main():
         summary_table.add_column("7D ROI %", justify="right", style="magenta")
         summary_table.add_column("30D ROI %", justify="right", style="magenta")
         summary_table.add_column("30D ROI", justify="right", style="yellow")
+        summary_table.add_column("Win Rate", justify="right", style="green")
         summary_table.add_column("nSol Swaps", justify="right", style="green")
         summary_table.add_column("Total Swaps", justify="right", style="green")
         SOL_ADDRESSES = {"So11111111111111111111111111111111111111112", "So11111111111111111111111111111111111111111"}
@@ -196,6 +205,10 @@ def main():
             }
             total_swaps = len(trades)
             non_sol_swaps = 0
+            
+            # Track token performance
+            token_performance = {}  # {token: {"invested": 0, "received": 0}}
+            
             for trade in trades:
                 amount_info = trade.get("amount_info", {})
                 if not amount_info:
@@ -211,6 +224,19 @@ def main():
                     amt1 = 0
                     amt2 = 0
                 trade_time = trade.get("block_time", 0)
+                
+                # Track token performance
+                if is_sol_token(token1) and token2:
+                    # Buying token2 with SOL
+                    if token2 not in token_performance:
+                        token_performance[token2] = {"invested": 0, "received": 0}
+                    token_performance[token2]["invested"] += amt1
+                elif is_sol_token(token2) and token1:
+                    # Selling token1 for SOL
+                    if token1 not in token_performance:
+                        token_performance[token1] = {"invested": 0, "received": 0}
+                    token_performance[token1]["received"] += amt2
+                
                 for period, stats in period_stats.items():
                     if trade_time >= stats["start"]:
                         if token1 in SOL_ADDRESSES:
@@ -219,6 +245,18 @@ def main():
                             stats["received"] += amt2
                 if token1 and token2 and (token1 not in SOL_ADDRESSES and token2 not in SOL_ADDRESSES):
                     non_sol_swaps += 1
+            
+            # Calculate win rate
+            profitable_tokens = 0
+            unprofitable_tokens = 0
+            for token, perf in token_performance.items():
+                if perf["received"] > perf["invested"]:
+                    profitable_tokens += 1
+                elif perf["received"] < perf["invested"]:
+                    unprofitable_tokens += 1
+            
+            total_traded_tokens = profitable_tokens + unprofitable_tokens
+            win_rate = (profitable_tokens / total_traded_tokens * 100) if total_traded_tokens > 0 else 0
             
             def compute_roi(stats):
                 if stats["invested"] > 0:
@@ -238,16 +276,20 @@ def main():
                 "7D ROI %": f"{roi_7d:.2f}",
                 "30D ROI %": f"{roi_30d:.2f}",
                 "30D ROI": f"{roi_30d_abs:.3f}",
+                "Win Rate": f"{win_rate:.1f}",
+                "Profitable/Total": f"{profitable_tokens}/{total_traded_tokens}",
                 "nSol Swaps": non_sol_swaps,
                 "Total Swaps": total_swaps
             })
             
+            win_rate_color = "green" if win_rate >= 50 else "red"
             summary_table.add_row(
                 addr,
                 f"{roi_24h:.2f}%",
                 f"{roi_7d:.2f}%",
                 f"{roi_30d:.2f}%",
                 f"{roi_30d_abs:.3f} SOL",
+                f"[{win_rate_color}]{win_rate:.1f}% ({profitable_tokens}/{total_traded_tokens})[/{win_rate_color}]",
                 str(non_sol_swaps),
                 str(total_swaps)
             )
