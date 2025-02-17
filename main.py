@@ -306,9 +306,9 @@ def main():
                     return f"{minutes}m"
             
             def calculate_roi(stats):
-                """Calculate ROI safely handling division by zero"""
+                """Calculate ROI relative to 0% (where 0% means no profit/loss)"""
                 if stats["invested"] > 0:
-                    return (stats["received"] / stats["invested"] * 100)
+                    return ((stats["received"] / stats["invested"]) - 1) * 100
                 return 0.0
             
             # Store result for CSV
@@ -328,11 +328,20 @@ def main():
             })
             
             win_rate_color = "green" if win_rate >= 50 else "red"
+            roi_24h = calculate_roi(period_stats['24h'])
+            roi_7d = calculate_roi(period_stats['7d'])
+            roi_30d = calculate_roi(period_stats['30d'])
+            
+            # Color ROIs based on profit/loss
+            roi_24h_color = "green" if roi_24h > 0 else "red" if roi_24h < 0 else "white"
+            roi_7d_color = "green" if roi_7d > 0 else "red" if roi_7d < 0 else "white"
+            roi_30d_color = "green" if roi_30d > 0 else "red" if roi_30d < 0 else "white"
+            
             summary_table.add_row(
                 addr,
-                f"{calculate_roi(period_stats['24h']):.2f}%",
-                f"{calculate_roi(period_stats['7d']):.2f}%",
-                f"{calculate_roi(period_stats['30d']):.2f}%",
+                f"[{roi_24h_color}]{roi_24h:+.2f}%[/{roi_24h_color}]",
+                f"[{roi_7d_color}]{roi_7d:+.2f}%[/{roi_7d_color}]",
+                f"[{roi_30d_color}]{roi_30d:+.2f}%[/{roi_30d_color}]",
                 f"{period_stats['30d']['received'] - period_stats['30d']['invested']:.3f} SOL",
                 f"[{win_rate_color}]{win_rate:.1f}% ({profitable_tokens}/{total_traded_tokens})[/{win_rate_color}]",
                 f"+{median_profit:.3f} ◎" if median_profit > 0 else "N/A",

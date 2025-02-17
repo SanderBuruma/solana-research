@@ -14,6 +14,8 @@ A Python-based command-line tool for interacting with the Solana blockchain. Fea
 - **-3 <address>**: View Balance History
   - Analyze historical balance fluctuations of a Solana address based on its DEX trading activity.
   - Shows detailed trading summary including number of trades per token.
+  notes:
+  - Works the best when a wallet only gets transfers in/out of SOL and not other tokens. Remaining tokens can be negative when tokens are received and sold on any wallet.
 
 - **-4 <pattern>**: Generate Vanity Address
   - Generate Solana addresses that match a custom regex pattern.
@@ -123,3 +125,4 @@ The tool leverages advanced optimizations including multi-core processing, JIT c
 ## Contributing
 
 Feel free to submit issues and enhancement requests! 
+Donate Solana or any other tokens to me at D2VUDgoMuRUhjizAM2jaQyrmHPeTmuCXwkKKnLvCBT32 if you appreciate my work
