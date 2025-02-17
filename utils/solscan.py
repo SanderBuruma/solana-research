@@ -333,7 +333,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             if token1:
                 token_stats[token1]['sol_received'] += amount2
                 token_stats[token1]['tokens_sold'] += amount1
-                token_stats[token1]['last_sol_rate'] = amount2 / amount1  # SOL per token
+                token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)  # SOL per token
                 token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
                 token_stats[token1]['first_trade'] = min(trade_time, token_stats[token1]['first_trade']) if token_stats[token1]['first_trade'] else trade_time
     
@@ -555,6 +555,11 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     median_profit = sorted(profits)[len(profits)//2] if profits else 0
     median_loss = sorted(losses)[len(losses)//2] if losses else 0
 
+    # Calculate win rate
+    total_tokens = len(profits) + len(losses)
+    win_rate = (len(profits) / total_tokens * 100) if total_tokens > 0 else 0
+    win_rate_color = "green" if win_rate >= 50 else "red"
+
     # Display transaction summary
     summary_table = Table(show_header=True, header_style="bold")
     summary_table.add_column("Transaction Type", style="cyan")
@@ -612,6 +617,11 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
 
     # Add section for profit/loss statistics
     summary_table.add_section()
+    summary_table.add_row(
+        "Win Rate",
+        f"[{win_rate_color}]{win_rate:.1f}%[/{win_rate_color}]",
+        f"({len(profits)}/{total_tokens} tokens)"
+    )
     if profits:
         summary_table.add_row(
             "Median Profit per Token",

@@ -1,5 +1,5 @@
 from rich.console import Console
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
 
@@ -13,7 +13,7 @@ def is_sol_token(token: str) -> bool:
         "So11111111111111111111111111111111111111111"
     }
     return token in SOL_ADDRESSES
-
+    
 def print_usage():
     """
     Print usage information
@@ -192,6 +192,9 @@ def main():
         summary_table.add_column("30D ROI %", justify="right", style="magenta")
         summary_table.add_column("30D ROI", justify="right", style="yellow")
         summary_table.add_column("Win Rate", justify="right", style="green")
+        summary_table.add_column("Med Profit", justify="right", style="green")
+        summary_table.add_column("Med Loss", justify="right", style="red")
+        summary_table.add_column("Avg Hold", justify="right", style="blue")
         summary_table.add_column("nSol Swaps", justify="right", style="green")
         summary_table.add_column("Total Swaps", justify="right", style="green")
         SOL_ADDRESSES = {"So11111111111111111111111111111111111111112", "So11111111111111111111111111111111111111111"}
@@ -207,100 +210,136 @@ def main():
                 console.print("[red]No DEX trading history found[/red]")
                 continue
                 
+            # Track token performance and period stats
+            token_performance = {}  # {token: {"invested": 0, "received": 0, "first_trade": None, "last_trade": None}}
             period_stats = {
                 "24h": {"invested": 0.0, "received": 0.0, "start": now - 86400},
                 "7d": {"invested": 0.0, "received": 0.0, "start": now - 7 * 86400},
                 "30d": {"invested": 0.0, "received": 0.0, "start": now - 30 * 86400}
             }
-            total_swaps = len(trades)
-            non_sol_swaps = 0
-            
-            # Track token performance
-            token_performance = {}  # {token: {"invested": 0, "received": 0}}
+            non_sol_swaps = 0  # Initialize counter for non-SOL swaps
             
             for trade in trades:
-                amount_info = trade.get("amount_info", {})
+                amount_info = trade.get('amount_info', {})
                 if not amount_info:
                     continue
-                token1 = amount_info.get("token1")
-                token2 = amount_info.get("token2")
-                token1_dec = amount_info.get("token1_decimals", 0)
-                token2_dec = amount_info.get("token2_decimals", 0)
+                token1 = amount_info.get('token1')
+                token2 = amount_info.get('token2')
+                token1_dec = amount_info.get('token1_decimals', 0)
+                token2_dec = amount_info.get('token2_decimals', 0)
                 try:
-                    amt1 = float(amount_info.get("amount1", 0)) / (10 ** token1_dec)
-                    amt2 = float(amount_info.get("amount2", 0)) / (10 ** token2_dec)
+                    amt1 = float(amount_info.get('amount1', 0)) / (10 ** token1_dec)
+                    amt2 = float(amount_info.get('amount2', 0)) / (10 ** token2_dec)
                 except (ValueError, TypeError):
                     amt1 = 0
                     amt2 = 0
-                trade_time = trade.get("block_time", 0)
+                trade_time = datetime.fromtimestamp(trade.get('block_time', 0))
+                trade_timestamp = trade.get('block_time', 0)
+                
+                # Update period stats
+                for period, stats in period_stats.items():
+                    if trade_timestamp >= stats["start"]:
+                        if token1 in SOL_ADDRESSES:
+                            stats["invested"] += amt1
+                        elif token2 in SOL_ADDRESSES:
+                            stats["received"] += amt2
                 
                 # Track token performance
                 if is_sol_token(token1) and token2:
                     # Buying token2 with SOL
                     if token2 not in token_performance:
-                        token_performance[token2] = {"invested": 0, "received": 0}
+                        token_performance[token2] = {"invested": 0, "received": 0, "first_trade": None, "last_trade": None}
                     token_performance[token2]["invested"] += amt1
+                    token_performance[token2]["first_trade"] = min(trade_time, token_performance[token2]["first_trade"]) if token_performance[token2]["first_trade"] else trade_time
+                    token_performance[token2]["last_trade"] = max(trade_time, token_performance[token2]["last_trade"]) if token_performance[token2]["last_trade"] else trade_time
                 elif is_sol_token(token2) and token1:
                     # Selling token1 for SOL
                     if token1 not in token_performance:
-                        token_performance[token1] = {"invested": 0, "received": 0}
+                        token_performance[token1] = {"invested": 0, "received": 0, "first_trade": None, "last_trade": None}
                     token_performance[token1]["received"] += amt2
+                    token_performance[token1]["first_trade"] = min(trade_time, token_performance[token1]["first_trade"]) if token_performance[token1]["first_trade"] else trade_time
+                    token_performance[token1]["last_trade"] = max(trade_time, token_performance[token1]["last_trade"]) if token_performance[token1]["last_trade"] else trade_time
                 
-                for period, stats in period_stats.items():
-                    if trade_time >= stats["start"]:
-                        if token1 in SOL_ADDRESSES:
-                            stats["invested"] += amt1
-                        elif token2 in SOL_ADDRESSES:
-                            stats["received"] += amt2
                 if token1 and token2 and (token1 not in SOL_ADDRESSES and token2 not in SOL_ADDRESSES):
                     non_sol_swaps += 1
             
             # Calculate win rate
             profitable_tokens = 0
             unprofitable_tokens = 0
+            profits = []
+            losses = []
+            total_duration = timedelta()
+            tokens_with_trades = 0
+            
             for token, perf in token_performance.items():
-                if perf["received"] > perf["invested"]:
+                sol_profit = perf["received"] - perf["invested"]
+                if sol_profit > 0:
                     profitable_tokens += 1
-                elif perf["received"] < perf["invested"]:
+                    profits.append(sol_profit)
+                elif sol_profit < 0:
                     unprofitable_tokens += 1
+                    losses.append(abs(sol_profit))
+                
+                # Calculate hold time if we have both first and last trade
+                if perf["first_trade"] and perf["last_trade"]:
+                    duration = perf["last_trade"] - perf["first_trade"]
+                    total_duration += duration
+                    tokens_with_trades += 1
             
             total_traded_tokens = profitable_tokens + unprofitable_tokens
             win_rate = (profitable_tokens / total_traded_tokens * 100) if total_traded_tokens > 0 else 0
             
-            def compute_roi(stats):
-                if stats["invested"] > 0:
-                    profit = stats["received"] - stats["invested"]
-                    return (profit / stats["invested"]) * 100
-                return 0.0
+            # Calculate medians and average hold time
+            median_profit = sorted(profits)[len(profits)//2] if profits else 0
+            median_loss = sorted(losses)[len(losses)//2] if losses else 0
+            avg_hold_time = total_duration / tokens_with_trades if tokens_with_trades > 0 else timedelta()
             
-            roi_24h = compute_roi(period_stats["24h"])
-            roi_7d = compute_roi(period_stats["7d"])
-            roi_30d = compute_roi(period_stats["30d"])
-            roi_30d_abs = period_stats["30d"]["received"] - period_stats["30d"]["invested"]
+            def format_duration(td):
+                days = td.days
+                hours = td.seconds // 3600
+                minutes = (td.seconds % 3600) // 60
+                if days > 0:
+                    return f"{days}d {hours}h {minutes}m"
+                elif hours > 0:
+                    return f"{hours}h {minutes}m"
+                else:
+                    return f"{minutes}m"
+            
+            def calculate_roi(stats):
+                """Calculate ROI safely handling division by zero"""
+                if stats["invested"] > 0:
+                    return (stats["received"] / stats["invested"] * 100)
+                return 0.0
             
             # Store result for CSV
             results.append({
                 "Address": addr,
-                "24H ROI %": f"{roi_24h:.2f}",
-                "7D ROI %": f"{roi_7d:.2f}",
-                "30D ROI %": f"{roi_30d:.2f}",
-                "30D ROI": f"{roi_30d_abs:.3f}",
+                "24H ROI %": f"{calculate_roi(period_stats['24h']):.2f}",
+                "7D ROI %": f"{calculate_roi(period_stats['7d']):.2f}",
+                "30D ROI %": f"{calculate_roi(period_stats['30d']):.2f}",
+                "30D ROI": f"{period_stats['30d']['received'] - period_stats['30d']['invested']:.3f}",
                 "Win Rate": f"{win_rate:.1f}",
                 "Profitable/Total": f"{profitable_tokens}/{total_traded_tokens}",
+                "Median Profit": f"{median_profit:.3f}",
+                "Median Loss": f"{median_loss:.3f}",
+                "Avg Hold Time": format_duration(avg_hold_time),
                 "nSol Swaps": non_sol_swaps,
-                "Total Swaps": total_swaps
+                "Total Swaps": len(trades)
             })
             
             win_rate_color = "green" if win_rate >= 50 else "red"
             summary_table.add_row(
                 addr,
-                f"{roi_24h:.2f}%",
-                f"{roi_7d:.2f}%",
-                f"{roi_30d:.2f}%",
-                f"{roi_30d_abs:.3f} SOL",
+                f"{calculate_roi(period_stats['24h']):.2f}%",
+                f"{calculate_roi(period_stats['7d']):.2f}%",
+                f"{calculate_roi(period_stats['30d']):.2f}%",
+                f"{period_stats['30d']['received'] - period_stats['30d']['invested']:.3f} SOL",
                 f"[{win_rate_color}]{win_rate:.1f}% ({profitable_tokens}/{total_traded_tokens})[/{win_rate_color}]",
+                f"+{median_profit:.3f} ◎" if median_profit > 0 else "N/A",
+                f"-{median_loss:.3f} ◎" if median_loss > 0 else "N/A",
+                format_duration(avg_hold_time),
                 str(non_sol_swaps),
-                str(total_swaps)
+                str(len(trades))
             )
         
         # Print the table
