@@ -325,7 +325,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             if token2:
                 token_stats[token2]['sol_invested'] += amount1
                 token_stats[token2]['tokens_bought'] += amount2
-                token_stats[token2]['last_sol_rate'] = amount1 / amount2  # SOL per token
+                token_stats[token2]['last_sol_rate'] = amount1 / (amount2 or 0.0000000001)  # SOL per token
                 token_stats[token2]['last_trade'] = max(trade_time, token_stats[token2]['last_trade']) if token_stats[token2]['last_trade'] else trade_time
                 token_stats[token2]['first_trade'] = min(trade_time, token_stats[token2]['first_trade']) if token_stats[token2]['first_trade'] else trade_time
         elif is_sol_token(token2):
