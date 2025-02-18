@@ -358,6 +358,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     table.add_column("Token", style="cyan", width=12)
     table.add_column("Hold Time", justify="left", style="blue")
     table.add_column("Last Trade", justify="left", style="dim")
+    table.add_column("First MC", justify="right", style="cyan")
     table.add_column("SOL Invested", justify="right", style="green")
     table.add_column("SOL Received", justify="right", style="red")
     table.add_column("SOL Profit", justify="right", style="yellow")
@@ -420,11 +421,42 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 hold_time_color = get_hold_time_color(stats['first_trade'], stats['last_trade'])
                 hold_time = f"[{hold_time_color}]{hold_time}[/{hold_time_color}]"
             
+            # Calculate first trade market cap (assuming 1B supply)
+            first_trade_rate = stats['sol_invested'] / stats['tokens_bought'] if stats['tokens_bought'] > 0 else 0
+            first_trade_mc = first_trade_rate * sol_price_usdt * 1_000_000_000  # 1B tokens
+            
+            # Format market cap display with appropriate suffix and color
+            if first_trade_mc > 0:
+                # Determine color based on market cap thresholds
+                if first_trade_mc >= 1_000_000_000:  # Over 1B
+                    mc_color = "red"
+                    mc_value = f"{first_trade_mc/1_000_000_000:.1f}B"
+                elif first_trade_mc >= 200_000_000:  # Over 200M
+                    mc_color = "yellow"
+                    mc_value = f"{first_trade_mc/1_000_000:.1f}M"
+                elif first_trade_mc >= 1_000_000:  # Over 1M
+                    mc_color = "green"
+                    mc_value = f"{first_trade_mc/1_000_000:.1f}M"
+                elif first_trade_mc >= 250_000:  # Over 250K
+                    mc_color = "green"
+                    mc_value = f"{first_trade_mc/1_000:.1f}K"
+                elif first_trade_mc >= 50_000:  # Over 50K
+                    mc_color = "yellow"
+                    mc_value = f"{first_trade_mc/1_000:.1f}K"
+                else:  # Under 50K
+                    mc_color = "red"
+                    mc_value = f"{first_trade_mc/1_000:.1f}K"
+                
+                mc_display = f"[{mc_color}]{mc_value}[/{mc_color}]"
+            else:
+                mc_display = "N/A"
+            
             # Add to table
             table.add_row(
                 format_token_address(token),
                 hold_time,
                 stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A',
+                mc_display,
                 f"{stats['sol_invested']:.3f} ◎",
                 f"{stats['sol_received']:.3f} ◎",
                 f"[{profit_color}]{sol_profit:+.3f} ◎[/{profit_color}]",
@@ -435,7 +467,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             )
             
             # Write to CSV (keep both absolute and relative times)
-            f.write(f"{token},{stats['first_trade'].strftime('%Y-%m-%d %H:%M') if stats['first_trade'] else 'N/A'},{format_time_difference(stats['first_trade'], stats['last_trade']) if stats['first_trade'] and stats['last_trade'] else 'N/A'},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{total_token_profit:.3f},{stats['token_price_usdt']:.6f},{token_trades}\n")
+            f.write(f"{token},{stats['first_trade'].strftime('%Y-%m-%d %H:%M') if stats['first_trade'] else 'N/A'},{format_time_difference(stats['first_trade'], stats['last_trade']) if stats['first_trade'] and stats['last_trade'] else 'N/A'},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'},{first_trade_mc:.2f},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{total_token_profit:.3f},{stats['token_price_usdt']:.6f},{token_trades}\n")
     
         # Add totals to CSV
         total_overall_profit = total_profit + total_remaining
@@ -446,6 +478,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     total_profit_style = "green" if total_overall_profit >= 0 else "red"
     table.add_row(
         "[bold]TOTAL[/bold]",
+        "",
         "",
         "",
         f"[bold]{total_invested:.3f} ◎[/bold]",
