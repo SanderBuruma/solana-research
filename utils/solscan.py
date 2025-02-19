@@ -535,7 +535,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             # Include remaining value in profit calculation
             total_received = stats['received'] + period_remaining_value[period]
             profit = total_received - stats['invested']
-            roi_percent = (profit / stats['invested']) * 100
+            roi_percent = ((total_received / stats['invested']) - 1) * 100
             profit_color = "green" if profit >= 0 else "red"
             roi_color = "green" if roi_percent >= 0 else "red"
             

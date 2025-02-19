@@ -306,9 +306,10 @@ def main():
                     return f"{minutes}m"
             
             def calculate_roi(stats):
-                """Calculate ROI relative to 0% (where 0% means no profit/loss)"""
+                """Calculate ROI relative to 0% (where 0% means no profit/loss), including remaining value"""
                 if stats["invested"] > 0:
-                    return ((stats["received"] / stats["invested"]) - 1) * 100
+                    total_received = stats["received"] + stats.get("remaining_value", 0)
+                    return ((total_received / stats["invested"]) - 1) * 100
                 return 0.0
             
             # Store result for CSV
