@@ -301,9 +301,9 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 elif is_sol_token(token2):
                     stats['received'] += amount2
         
-        # Initialize token stats if needed
+        # Initialize token stats if needed (excluding SOL tokens)
         for token in [token1, token2]:
-            if token and token not in token_stats and not is_sol_token(token):
+            if token and not is_sol_token(token) and token not in token_stats:
                 token_stats[token] = {
                     'sol_invested': 0,  # SOL spent to buy this token
                     'sol_received': 0,  # SOL received from selling this token
@@ -319,22 +319,20 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 }
         
         # Update stats based on trade direction
-        if is_sol_token(token1):
+        if is_sol_token(token1) and not is_sol_token(token2):
             # Sold SOL for tokens
-            if token2:
-                token_stats[token2]['sol_invested'] += amount1
-                token_stats[token2]['tokens_bought'] += amount2
-                token_stats[token2]['last_sol_rate'] = amount1 / (amount2 or 0.0000000001)  # SOL per token
-                token_stats[token2]['last_trade'] = max(trade_time, token_stats[token2]['last_trade']) if token_stats[token2]['last_trade'] else trade_time
-                token_stats[token2]['first_trade'] = min(trade_time, token_stats[token2]['first_trade']) if token_stats[token2]['first_trade'] else trade_time
-        elif is_sol_token(token2):
+            token_stats[token2]['sol_invested'] += amount1
+            token_stats[token2]['tokens_bought'] += amount2
+            token_stats[token2]['last_sol_rate'] = amount1 / (amount2 or 0.0000000001)  # SOL per token
+            token_stats[token2]['last_trade'] = max(trade_time, token_stats[token2]['last_trade']) if token_stats[token2]['last_trade'] else trade_time
+            token_stats[token2]['first_trade'] = min(trade_time, token_stats[token2]['first_trade']) if token_stats[token2]['first_trade'] else trade_time
+        elif is_sol_token(token2) and not is_sol_token(token1):
             # Sold tokens for SOL
-            if token1:
-                token_stats[token1]['sol_received'] += amount2
-                token_stats[token1]['tokens_sold'] += amount1
-                token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)  # SOL per token
-                token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
-                token_stats[token1]['first_trade'] = min(trade_time, token_stats[token1]['first_trade']) if token_stats[token1]['first_trade'] else trade_time
+            token_stats[token1]['sol_received'] += amount2
+            token_stats[token1]['tokens_sold'] += amount1
+            token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)  # SOL per token
+            token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
+            token_stats[token1]['first_trade'] = min(trade_time, token_stats[token1]['first_trade']) if token_stats[token1]['first_trade'] else trade_time
     
     # Fetch current token prices for tokens with remaining balance
     api = SolscanAPI()
