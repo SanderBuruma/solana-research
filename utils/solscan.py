@@ -439,10 +439,10 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 elif first_trade_mc >= 250_000:  # Over 250K
                     mc_color = "green"
                     mc_value = f"{first_trade_mc/1_000:.1f}K"
-                elif first_trade_mc >= 50_000:  # Over 50K
+                elif first_trade_mc >= 25_000:  # Over 50K
                     mc_color = "yellow"
                     mc_value = f"{first_trade_mc/1_000:.1f}K"
-                else:  # Under 50K
+                else:  # Under 25K
                     mc_color = "red"
                     mc_value = f"{first_trade_mc/1_000:.1f}K"
                 
