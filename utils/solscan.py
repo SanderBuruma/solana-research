@@ -21,8 +21,7 @@ class SolscanAPI:
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-site',
             'sec-gpc': '1',
-            'sol-aut': '4iOtUjKOhwGFLxtTMWPOVZB9dls0fKyJ0pVfH-hN',
-            'token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNhbmRlcmJ1cnVtYUBmYXN0bWFpbC5ubCIsImFjdGlvbiI6ImxvZ2dlZCIsImlhdCI6MTczOTAzMTY5NiwiZXhwIjoxNzQ5ODMxNjk2fQ.29Lfnoni9KO_oRjyr0M6pjcXzNc3N2d-mQEAStpw2eA',
+            'sol-aut': os.getenv('SOLSCAN_SOL_AUT'),
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
         }
         self.console = Console()
