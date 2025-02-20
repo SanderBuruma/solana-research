@@ -71,7 +71,7 @@ class SolscanAPI:
         one_month_ago = datetime.now().timestamp() - (30 * 86400)  # 30 days in seconds
         
         while True:
-            endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}'
+            endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP'
             data = self._make_request(endpoint)
             
             if not data or not data.get('success') or not data.get('data'):
