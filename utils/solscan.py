@@ -392,10 +392,11 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             sol_profit = stats['sol_received'] - stats['sol_invested']
             
             # Calculate remaining value using current token price if available
-            if stats['token_price_usdt'] > 0 and sol_price_usdt > 0:
-                remaining_value = (remaining_tokens * stats['token_price_usdt']) / sol_price_usdt
+            token_price = stats.get('token_price_usdt')
+            if token_price is not None and token_price > 0 and sol_price_usdt > 0:
+                remaining_value = (remaining_tokens * token_price) / sol_price_usdt
             else:
-                remaining_value = remaining_tokens * stats['last_sol_rate']
+                remaining_value = remaining_tokens * stats.get('last_sol_rate', 0)
             
             total_token_profit = sol_profit + remaining_value
             
@@ -414,16 +415,19 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             total_profit_color = "green" if total_token_profit >= 0 else "red"
             
             # Format token price display
-            token_price_display = f"${stats['token_price_usdt']:.6f}" if stats['token_price_usdt'] > 0 else "N/A"
+            token_price_display = f"${token_price:.6f}" if token_price is not None and token_price > 0 else "N/A"
             
             # Format hold time with color
-            hold_time = format_time_difference(stats['first_trade'], stats['last_trade']) if stats['first_trade'] and stats['last_trade'] else 'N/A'
+            first_trade = stats.get('first_trade')
+            last_trade = stats.get('last_trade')
+            hold_time = format_time_difference(first_trade, last_trade) if first_trade and last_trade else 'N/A'
             if hold_time != 'N/A':
-                hold_time_color = get_hold_time_color(stats['first_trade'], stats['last_trade'])
+                hold_time_color = get_hold_time_color(first_trade, last_trade)
                 hold_time = f"[{hold_time_color}]{hold_time}[/{hold_time_color}]"
             
             # Calculate first trade market cap (assuming 1B supply)
-            first_trade_rate = stats['sol_invested'] / stats['tokens_bought'] if stats['tokens_bought'] > 0 else 0
+            tokens_bought = stats.get('tokens_bought', 0)
+            first_trade_rate = stats['sol_invested'] / tokens_bought if tokens_bought > 0 else 0
             first_trade_mc = first_trade_rate * sol_price_usdt * 1_000_000_000  # 1B tokens
             
             # Format market cap display with appropriate suffix and color
@@ -456,10 +460,10 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             table.add_row(
                 format_token_address(token),
                 hold_time,
-                stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A',
+                stats.get('last_trade').strftime('%Y-%m-%d %H:%M') if stats.get('last_trade') else 'N/A',
                 mc_display,
-                f"{stats['sol_invested']:.3f} ◎",
-                f"{stats['sol_received']:.3f} ◎",
+                f"{stats.get('sol_invested', 0):.3f} ◎",
+                f"{stats.get('sol_received', 0):.3f} ◎",
                 f"[{profit_color}]{sol_profit:+.3f} ◎[/{profit_color}]",
                 f"{remaining_value:.3f} ◎",
                 f"[{total_profit_color}]{total_token_profit:+.3f} ◎[/{total_profit_color}]",
@@ -468,11 +472,36 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             )
             
             # Write to CSV (keep both absolute and relative times)
-            f.write(f"{token},{stats['first_trade'].strftime('%Y-%m-%d %H:%M') if stats['first_trade'] else 'N/A'},{format_time_difference(stats['first_trade'], stats['last_trade']) if stats['first_trade'] and stats['last_trade'] else 'N/A'},{stats['last_trade'].strftime('%Y-%m-%d %H:%M') if stats['last_trade'] else 'N/A'},{first_trade_mc:.2f},{stats['sol_invested']:.3f},{stats['sol_received']:.3f},{sol_profit:.3f},{remaining_value:.3f},{total_token_profit:.3f},{stats['token_price_usdt']:.6f},{token_trades}\n")
+            # Handle missing token information
+            try:
+                token_price_csv = stats.get('token_price_usdt')
+                if token_price_csv is None:
+                    token_price_csv = 0
+                
+                first_trade_str = stats.get('first_trade').strftime('%Y-%m-%d %H:%M') if stats.get('first_trade') else 'N/A'
+                last_trade_str = stats.get('last_trade').strftime('%Y-%m-%d %H:%M') if stats.get('last_trade') else 'N/A'
+                hold_time_str = format_time_difference(stats.get('first_trade'), stats.get('last_trade')) if stats.get('first_trade') and stats.get('last_trade') else 'N/A'
+                
+                f.write(f"{token}," + 
+                       f"{first_trade_str}," +
+                       f"{hold_time_str}," +
+                       f"{last_trade_str}," +
+                       f"{first_trade_mc:.2f}," +
+                       f"{stats.get('sol_invested', 0):.3f}," +
+                       f"{stats.get('sol_received', 0):.3f}," +
+                       f"{sol_profit:.3f}," +
+                       f"{'ERROR' if token_price_csv is None else remaining_value:.3f}," +
+                       f"{total_token_profit:.3f}," +
+                       f"{token_price_csv:.6f}," +
+                       f"{token_trades}\n")
+            except Exception as e:
+                # If any error occurs while writing token data, write a safe fallback row
+                f.write(f"{token},N/A,N/A,N/A,0.00,{stats.get('sol_invested', 0):.3f},{stats.get('sol_received', 0):.3f}," +
+                       f"{sol_profit:.3f},ERROR,{total_token_profit:.3f},0.000000,{token_trades}\n")
     
         # Add totals to CSV
         total_overall_profit = total_profit + total_remaining
-        f.write(f"TOTAL,{total_invested:.3f},{total_received:.3f},{total_profit:.3f},{total_remaining:.3f},{total_overall_profit:.3f},,{total_trades},\n")
+        f.write(f"TOTAL,{total_invested:.3f},{total_received:.3f},{total_profit:.3f},{total_remaining:.3f},{total_overall_profit:.3f},,,{total_trades},\n")
     
     # Add totals row to table
     profit_style = "green" if total_profit >= 0 else "red"
@@ -517,12 +546,13 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
         
         # Calculate remaining value using current token price if available
-        if stats['token_price_usdt'] > 0 and sol_price_usdt > 0:
-            remaining_value = (remaining_tokens * stats['token_price_usdt']) / sol_price_usdt
+        token_price = stats.get('token_price_usdt')
+        if token_price is not None and token_price > 0 and sol_price_usdt > 0:
+            remaining_value = (remaining_tokens * token_price) / sol_price_usdt
         else:
-            remaining_value = remaining_tokens * stats['last_sol_rate']
+            remaining_value = remaining_tokens * stats.get('last_sol_rate', 0)
         
-        if stats['last_trade']:
+        if stats.get('last_trade'):
             last_trade_time = stats['last_trade'].timestamp()
             # Add remaining value to each period where the last trade falls within the period
             if last_trade_time >= current_time - 86400:  # 24h
@@ -533,17 +563,18 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 period_remaining_value['30d'] += remaining_value
     
     for period, stats in period_stats.items():
-        if stats['invested'] > 0:
+        invested = stats.get('invested', 0)
+        if invested > 0:
             # Include remaining value in profit calculation
-            total_received = stats['received'] + period_remaining_value[period]
-            profit = total_received - stats['invested']
-            roi_percent = ((total_received / stats['invested']) - 1) * 100
+            total_received = stats.get('received', 0) + period_remaining_value.get(period, 0)
+            profit = total_received - invested
+            roi_percent = ((total_received / invested) - 1) * 100
             profit_color = "green" if profit >= 0 else "red"
             roi_color = "green" if roi_percent >= 0 else "red"
             
             roi_table.add_row(
                 period.upper(),
-                f"{stats['invested']:.3f} ◎",
+                f"{invested:.3f} ◎",
                 f"{total_received:.3f} ◎",  # Show total including remaining value
                 f"[{profit_color}]{profit:+.3f} ◎[/{profit_color}]",
                 f"[{roi_color}]{roi_percent:+.2f}%[/{roi_color}]"
