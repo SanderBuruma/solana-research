@@ -279,6 +279,8 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         token2 = amount_info.get('token2')
         token1_decimals = amount_info.get('token1_decimals', 0)
         token2_decimals = amount_info.get('token2_decimals', 0)
+        
+        # Ignore vault dex activity
         if not token1 or not token2:
             continue
         
