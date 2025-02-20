@@ -434,10 +434,10 @@ def main():
             console.print(f"[red]Error fetching data: {str(e)}[/red]")
             sys.exit(1)
 
-        else:
-            print(f"Error: Unknown option {option}")
-            print_usage()
-            sys.exit(1)
+    else:
+        print(f"Error: Unknown option {option}")
+        print_usage()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
