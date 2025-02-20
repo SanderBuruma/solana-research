@@ -319,7 +319,9 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                     'token_price_usdt': 0,  # Current token price in USDT
                     'decimals': 0,  # Token decimals
                     'name': '',  # Token name
-                    'symbol': ''  # Token symbol
+                    'symbol': '',  # Token symbol
+                    'hold_time': None,  # Added for the new hold time calculation
+                    'trade_count': 0  # Added for trade count
                 }
         
         # Update stats based on trade direction
@@ -337,6 +339,12 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)  # SOL per token
             token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
             token_stats[token1]['first_trade'] = min(trade_time, token_stats[token1]['first_trade']) if token_stats[token1]['first_trade'] else trade_time
+        
+        # Update trade count
+        if token1 and not is_sol_token(token1):
+            token_stats[token1]['trade_count'] += 1
+        if token2 and not is_sol_token(token2):
+            token_stats[token2]['trade_count'] += 1
     
     # Fetch current token prices for tokens with remaining balance
     api = SolscanAPI()
@@ -354,25 +362,38 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                 stats['name'] = token_data.get('name', '')
                 stats['symbol'] = token_data.get('symbol', '')
     
-    # Create and display the summary table
-    table = Table(title="DEX Trading Summary")
-    table.add_column("Token", style="cyan", width=12)
-    table.add_column("Hold Time", justify="left", style="blue")
-    table.add_column("Last Trade", justify="left", style="dim")
-    table.add_column("First MC", justify="right", style="cyan")
-    table.add_column("SOL Invested", justify="right", style="green")
-    table.add_column("SOL Received", justify="right", style="red")
-    table.add_column("SOL Profit", justify="right", style="yellow")
-    table.add_column("Remaining Value", justify="right", style="magenta")
-    table.add_column("Total Profit", justify="right", style="blue")
-    table.add_column("Token Price", justify="right", style="cyan")
-    table.add_column("Trades", justify="right", style="green")
-    
+    # Calculate hold time for each token
+    current_time = datetime.now()
+    for token, stats in token_stats.items():
+        remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
+        if stats['first_trade']:
+            # If tokens are still held, use current time as the end time
+            if remaining_tokens > 0:
+                stats['last_trade'] = current_time
+            # Calculate hold time
+            if stats['last_trade']:
+                duration = stats['last_trade'] - stats['first_trade']
+                stats['hold_time'] = duration
+
     # Sort by first trade date
     sorted_tokens = sorted(
         [(k, v) for k, v in token_stats.items() if not is_sol_token(k)],
         key=lambda x: x[1]['first_trade'] if x[1]['first_trade'] else datetime.max
     )
+    
+    # Create the table
+    table = Table(title="DEX Trading Summary")
+    table.add_column("Token", style="dim")
+    table.add_column("Hold Time", justify="right", style="blue")
+    table.add_column("Last Trade", justify="right", style="cyan")
+    table.add_column("First MC", justify="right", style="yellow")
+    table.add_column("SOL Invested", justify="right", style="green")
+    table.add_column("SOL Received", justify="right", style="green")
+    table.add_column("SOL Profit", justify="right", style="green")
+    table.add_column("Remaining", justify="right", style="yellow")
+    table.add_column("Total Profit", justify="right", style="green")
+    table.add_column("Token Price", justify="right", style="magenta")
+    table.add_column("Trades", justify="right", style="cyan")
     
     # Track totals
     total_invested = 0
@@ -385,7 +406,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     os.makedirs('reports', exist_ok=True)
     csv_file = f'reports/{wallet_address}.csv'
     with open(csv_file, 'w') as f:
-        f.write("Token,First Trade,Last Trade,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Token Price (USDT),Trades\n")
+        f.write("Token,First Trade,Hold Time,Last Trade,First MC,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Token Price (USDT),Trades\n")
         
         for token, stats in sorted_tokens:
             remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
@@ -424,6 +445,8 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             if hold_time != 'N/A':
                 hold_time_color = get_hold_time_color(first_trade, last_trade)
                 hold_time = f"[{hold_time_color}]{hold_time}[/{hold_time_color}]"
+                if remaining_tokens > 0:
+                    hold_time += " [dim]*[dim]"
             
             # Calculate first trade market cap (assuming 1B supply)
             tokens_bought = stats.get('tokens_bought', 0)
@@ -606,10 +629,11 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         if token1 and token2 and token1 not in SOL_ADDRESSES and token2 not in SOL_ADDRESSES:
             non_sol_txs += 1
 
-    # Calculate median profit and loss
+    # Calculate median profit and loss and holding times
     profits = []
     losses = []
     investments = []  # Track all investments
+    hold_times = []  # Track all hold times
     for token, stats in token_stats.items():
         sol_profit = stats['sol_received'] - stats['sol_invested']
         investments.append(stats['sol_invested'])  # Add investment to list
@@ -617,11 +641,17 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             profits.append(sol_profit)
         elif sol_profit < 0:
             losses.append(abs(sol_profit))  # Store absolute value of losses
+        
+        # Calculate and store hold time
+        if stats['first_trade'] and stats['last_trade'] and stats['first_trade'] != stats['last_trade']:
+            duration = stats['last_trade'] - stats['first_trade']
+            hold_times.append(duration)
     
     # Calculate medians
     median_profit = sorted(profits)[len(profits)//2] if profits else 0
     median_loss = sorted(losses)[len(losses)//2] if losses else 0
     median_investment = sorted(investments)[len(investments)//2] if investments else 0
+    median_hold_time = sorted(hold_times)[len(hold_times)//2] if hold_times else timedelta()
 
     # Calculate win rate
     total_tokens = len(profits) + len(losses)
@@ -631,39 +661,6 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     # Calculate ROI percentages relative to median investment
     median_profit_roi = (median_profit / median_investment * 100) if median_investment > 0 else 0
     median_loss_roi = (median_loss / median_investment * 100) if median_investment > 0 else 0
-
-    # Calculate average time between first and last trade for each token
-    total_duration = timedelta()
-    tokens_with_multiple_trades = 0
-    earliest_trade = None
-    latest_trade = None
-
-    for token, stats in token_stats.items():
-        if stats['first_trade'] and stats['last_trade'] and stats['first_trade'] != stats['last_trade']:
-            duration = stats['last_trade'] - stats['first_trade']
-            total_duration += duration
-            tokens_with_multiple_trades += 1
-            
-            # Track overall trading timespan
-            if not earliest_trade or stats['first_trade'] < earliest_trade:
-                earliest_trade = stats['first_trade']
-            if not latest_trade or stats['last_trade'] > latest_trade:
-                latest_trade = stats['last_trade']
-
-    # Calculate averages
-    avg_token_duration = total_duration / tokens_with_multiple_trades if tokens_with_multiple_trades > 0 else timedelta()
-    
-    # Format duration for display
-    def format_duration(td):
-        days = td.days
-        hours = td.seconds // 3600
-        minutes = (td.seconds % 3600) // 60
-        if days > 0:
-            return f"{days}d {hours}h {minutes}m"
-        elif hours > 0:
-            return f"{hours}h {minutes}m"
-        else:
-            return f"{minutes}m"
 
     # Display transaction summary
     summary_table = Table(show_header=True, header_style="bold")
@@ -712,19 +709,12 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             f"({len(losses)} tokens)"
         )
 
-    if earliest_trade and latest_trade:
-        total_trading_span = latest_trade - earliest_trade
+    if hold_times:
         summary_table.add_row(
-            "Total Trading Timespan",
-            format_duration(total_trading_span),
-            ""
+            "Median Hold Time",
+            format_time_difference(datetime.now(), datetime.now() + median_hold_time),
+            f"({len(hold_times)} tokens)"
         )
-        if tokens_with_multiple_trades > 0:
-            summary_table.add_row(
-                "Avg Token Hold Time",
-                format_duration(avg_token_duration),
-                ""
-            )
 
     console.print("\n[bold]Transaction Summary[/bold]")
     console.print(summary_table)

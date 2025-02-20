@@ -195,7 +195,7 @@ def main():
         summary_table.add_column("Med Investment", justify="right", style="green")
         summary_table.add_column("Med Profit", justify="right", style="green")
         summary_table.add_column("Med Loss", justify="right", style="red")
-        summary_table.add_column("Avg Hold", justify="right", style="blue")
+        summary_table.add_column("Med Hold Time", justify="right", style="blue")
         summary_table.add_column("nSol Swaps", justify="right", style="green")
         summary_table.add_column("Total Swaps", justify="right", style="green")
         SOL_ADDRESSES = {"So11111111111111111111111111111111111111112", "So11111111111111111111111111111111111111111"}
@@ -270,8 +270,8 @@ def main():
             profits = []
             losses = []
             investments = []  # Track all investments
-            total_duration = timedelta()
-            tokens_with_trades = 0
+            hold_times = []  # Track all hold times
+            current_time = datetime.now()
             
             for token, perf in token_performance.items():
                 sol_profit = perf["received"] - perf["invested"]
@@ -283,20 +283,23 @@ def main():
                     unprofitable_tokens += 1
                     losses.append(abs(sol_profit))
                 
-                # Calculate hold time if we have both first and last trade
-                if perf["first_trade"] and perf["last_trade"]:
-                    duration = perf["last_trade"] - perf["first_trade"]
-                    total_duration += duration
-                    tokens_with_trades += 1
+                # Calculate hold time if we have first trade
+                if perf["first_trade"]:
+                    # If no last trade or if tokens are still held (received < invested), use current time
+                    end_time = perf["last_trade"] if perf["last_trade"] and perf["received"] >= perf["invested"] else current_time
+                    if end_time:
+                        duration = end_time - perf["first_trade"]
+                        hold_times.append(duration)
+                        perf["hold_time"] = duration  # Store for display
             
             total_traded_tokens = profitable_tokens + unprofitable_tokens
             win_rate = (profitable_tokens / total_traded_tokens * 100) if total_traded_tokens > 0 else 0
             
-            # Calculate medians and average hold time
+            # Calculate medians
             median_profit = sorted(profits)[len(profits)//2] if profits else 0
             median_loss = sorted(losses)[len(losses)//2] if losses else 0
             median_investment = sorted(investments)[len(investments)//2] if investments else 0
-            avg_hold_time = total_duration / tokens_with_trades if tokens_with_trades > 0 else timedelta()
+            median_hold_time = sorted(hold_times)[len(hold_times)//2] if hold_times else timedelta()
             
             # Calculate ROI percentages relative to median investment
             median_profit_roi = (median_profit / median_investment * 100) if median_investment > 0 else 0
@@ -332,7 +335,7 @@ def main():
                 "Median Investment": f"{median_investment:.3f}",
                 "Median Profit": f"{median_profit:.3f} ({median_profit_roi:.1f}%)",
                 "Median Loss": f"{median_loss:.3f} ({median_loss_roi:.1f}%)",
-                "Avg Hold Time": format_duration(avg_hold_time),
+                "Median Hold Time": format_duration(median_hold_time),
                 "nSol Swaps": non_sol_swaps,
                 "Total Swaps": len(trades)
             })
@@ -357,7 +360,7 @@ def main():
                 f"{median_investment:.3f} ◎",
                 f"+{median_profit:.3f} ◎ (+{median_profit_roi:.1f}%)" if median_profit > 0 else "N/A",
                 f"-{median_loss:.3f} ◎ (-{median_loss_roi:.1f}%)" if median_loss > 0 else "N/A",
-                format_duration(avg_hold_time),
+                format_duration(median_hold_time),
                 str(non_sol_swaps),
                 str(len(trades))
             )
