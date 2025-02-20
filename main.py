@@ -192,6 +192,7 @@ def main():
         summary_table.add_column("30D ROI %", justify="right", style="magenta")
         summary_table.add_column("30D ROI", justify="right", style="yellow")
         summary_table.add_column("Win Rate", justify="right", style="green")
+        summary_table.add_column("Med Investment", justify="right", style="green")
         summary_table.add_column("Med Profit", justify="right", style="green")
         summary_table.add_column("Med Loss", justify="right", style="red")
         summary_table.add_column("Avg Hold", justify="right", style="blue")
@@ -268,11 +269,13 @@ def main():
             unprofitable_tokens = 0
             profits = []
             losses = []
+            investments = []  # Track all investments
             total_duration = timedelta()
             tokens_with_trades = 0
             
             for token, perf in token_performance.items():
                 sol_profit = perf["received"] - perf["invested"]
+                investments.append(perf["invested"])  # Add investment to list
                 if sol_profit > 0:
                     profitable_tokens += 1
                     profits.append(sol_profit)
@@ -292,7 +295,12 @@ def main():
             # Calculate medians and average hold time
             median_profit = sorted(profits)[len(profits)//2] if profits else 0
             median_loss = sorted(losses)[len(losses)//2] if losses else 0
+            median_investment = sorted(investments)[len(investments)//2] if investments else 0
             avg_hold_time = total_duration / tokens_with_trades if tokens_with_trades > 0 else timedelta()
+            
+            # Calculate ROI percentages relative to median investment
+            median_profit_roi = (median_profit / median_investment * 100) if median_investment > 0 else 0
+            median_loss_roi = (median_loss / median_investment * 100) if median_investment > 0 else 0
             
             def format_duration(td):
                 days = td.days
@@ -321,8 +329,9 @@ def main():
                 "30D ROI": f"{period_stats['30d']['received'] - period_stats['30d']['invested']:.3f}",
                 "Win Rate": f"{win_rate:.1f}",
                 "Profitable/Total": f"{profitable_tokens}/{total_traded_tokens}",
-                "Median Profit": f"{median_profit:.3f}",
-                "Median Loss": f"{median_loss:.3f}",
+                "Median Investment": f"{median_investment:.3f}",
+                "Median Profit": f"{median_profit:.3f} ({median_profit_roi:.1f}%)",
+                "Median Loss": f"{median_loss:.3f} ({median_loss_roi:.1f}%)",
                 "Avg Hold Time": format_duration(avg_hold_time),
                 "nSol Swaps": non_sol_swaps,
                 "Total Swaps": len(trades)
@@ -345,8 +354,9 @@ def main():
                 f"[{roi_30d_color}]{roi_30d:+.2f}%[/{roi_30d_color}]",
                 f"{period_stats['30d']['received'] - period_stats['30d']['invested']:.3f} SOL",
                 f"[{win_rate_color}]{win_rate:.1f}% ({profitable_tokens}/{total_traded_tokens})[/{win_rate_color}]",
-                f"+{median_profit:.3f} ◎" if median_profit > 0 else "N/A",
-                f"-{median_loss:.3f} ◎" if median_loss > 0 else "N/A",
+                f"{median_investment:.3f} ◎",
+                f"+{median_profit:.3f} ◎ (+{median_profit_roi:.1f}%)" if median_profit > 0 else "N/A",
+                f"-{median_loss:.3f} ◎ (-{median_loss_roi:.1f}%)" if median_loss > 0 else "N/A",
                 format_duration(avg_hold_time),
                 str(non_sol_swaps),
                 str(len(trades))

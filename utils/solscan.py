@@ -609,8 +609,10 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     # Calculate median profit and loss
     profits = []
     losses = []
+    investments = []  # Track all investments
     for token, stats in token_stats.items():
         sol_profit = stats['sol_received'] - stats['sol_invested']
+        investments.append(stats['sol_invested'])  # Add investment to list
         if sol_profit > 0:
             profits.append(sol_profit)
         elif sol_profit < 0:
@@ -619,17 +621,16 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     # Calculate medians
     median_profit = sorted(profits)[len(profits)//2] if profits else 0
     median_loss = sorted(losses)[len(losses)//2] if losses else 0
+    median_investment = sorted(investments)[len(investments)//2] if investments else 0
 
     # Calculate win rate
     total_tokens = len(profits) + len(losses)
     win_rate = (len(profits) / total_tokens * 100) if total_tokens > 0 else 0
     win_rate_color = "green" if win_rate >= 50 else "red"
 
-    # Display transaction summary
-    summary_table = Table(show_header=True, header_style="bold")
-    summary_table.add_column("Transaction Type", style="cyan")
-    summary_table.add_column("Count", justify="right", style="yellow")
-    summary_table.add_column("Percentage", justify="right", style="green")
+    # Calculate ROI percentages relative to median investment
+    median_profit_roi = (median_profit / median_investment * 100) if median_investment > 0 else 0
+    median_loss_roi = (median_loss / median_investment * 100) if median_investment > 0 else 0
 
     # Calculate average time between first and last trade for each token
     total_duration = timedelta()
@@ -664,6 +665,12 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         else:
             return f"{minutes}m"
 
+    # Display transaction summary
+    summary_table = Table(show_header=True, header_style="bold")
+    summary_table.add_column("Transaction Type", style="cyan")
+    summary_table.add_column("Count", justify="right", style="yellow")
+    summary_table.add_column("Percentage", justify="right", style="green")
+
     summary_table.add_row(
         "Total DeFi Transactions",
         str(total_defi_txs),
@@ -687,16 +694,21 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         f"[{win_rate_color}]{win_rate:.1f}%[/{win_rate_color}]",
         f"({len(profits)}/{total_tokens} tokens)"
     )
+    summary_table.add_row(
+        "Median Investment per Token",
+        f"{median_investment:.3f} ◎",
+        ""
+    )
     if profits:
         summary_table.add_row(
             "Median Profit per Token",
-            f"[green]+{median_profit:.3f} ◎[/green]",
+            f"[green]+{median_profit:.3f} ◎ (+{median_profit_roi:.1f}%)[/green]",
             f"({len(profits)} tokens)"
         )
     if losses:
         summary_table.add_row(
             "Median Loss per Token",
-            f"[red]-{median_loss:.3f} ◎[/red]",
+            f"[red]-{median_loss:.3f} ◎ (-{median_loss_roi:.1f}%)[/red]",
             f"({len(losses)} tokens)"
         )
 
