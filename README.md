@@ -17,12 +17,6 @@ A Python-based command-line tool for interacting with the Solana blockchain. Fea
   notes:
   - Works the best when a wallet only gets transfers in/out of SOL and not other tokens. Remaining tokens can be negative when tokens are received and sold on any wallet.
 
-- **-4 <pattern>**: Generate Vanity Address
-  - Generate Solana addresses that match a custom regex pattern.
-  - Utilizes multi-core processing, JIT compilation, and batch processing for faster generation.
-  - Generates keypairs compatible with the Phantom wallet.
-  - Found addresses are automatically saved to `found_addresses.txt`.
-
 - **-5 <address> [<address> ...]**: View DeFi Summary for Wallets
   - Accept one or more wallet addresses and produce a summary table.
   - Can read addresses from a text file (e.g., `addresses.txt`) or directly from command line.

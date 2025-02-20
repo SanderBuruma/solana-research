@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 import os
 
 from utils.solscan import SolscanAPI, display_dex_trading_summary, display_transactions_table
-from utils.vanity import generate_vanity_address
 
 def is_sol_token(token: str) -> bool:
     """Check if a token address is SOL"""
@@ -23,14 +22,12 @@ def print_usage():
     print("-1 <address>     Get Account Balance")
     print("-2 <address>     View Transaction History")
     print("-3 <address>     View Balance History")
-    print("-4 <pattern>     Generate Vanity Address")
     print("-5 <address>     View DeFi Summary for Wallets")
     print("-6              Get Holder Addresses using bullX (must provide auth token from request headers findable through the network console)")
     print("\nExamples:")
     print("python main.py -1 <address>")
     print("python main.py -2 <address>")
     print("python main.py -3 <address>")
-    print("python main.py -4 \"abc$\"")
     print("python main.py -5 <address1> <address2> <address3>")
     print("==========================")
 
@@ -137,17 +134,6 @@ def main():
             display_dex_trading_summary(trades, api.console, address)
         else:
             api.console.print("[red]No DEX trading history found[/red]")
-
-    elif option == "-4":
-        if len(sys.argv) != 3:
-            print("Error: Pattern required for vanity address")
-            print_usage()
-            sys.exit(1)
-        pattern = sys.argv[2]
-        if not pattern:
-            console.print("[red]Pattern cannot be empty[/red]")
-            sys.exit(1)
-        generate_vanity_address(pattern, console)
 
     elif option == "-5":
         if len(sys.argv) < 3:
