@@ -124,40 +124,41 @@ def display_transactions_table(transactions: List[Dict[str, Any]], console: Cons
     Display transactions in a rich table format
     """
     table = Table(title="Transaction History")
-    
-    # Add columns
-    table.add_column("Time", justify="left", style="cyan")
-    table.add_column("Type", justify="center", style="magenta")
-    table.add_column("Amount (SOL)", justify="right", style="green")
-    table.add_column("From", justify="right")
-    table.add_column("To", justify="left")
-    table.add_column("Value (USD)", justify="right", style="yellow")
-    
+    # Crear tabla
+    table = Table(title="Transaction Table", show_lines=True)
+
+    # Definir columnas
+    table.add_column("Time", style="bold")
+    table.add_column("Type", style="magenta")
+    table.add_column("Amount (SOL)", justify="right", style="cyan")
+    table.add_column("From", style="bold")
+    table.add_column("To", style="bold")
+    table.add_column("Value (USD)", justify="right", style="green")
+
     # Add rows
     for tx in transactions:
         timestamp = datetime.fromtimestamp(tx['block_time']).strftime('%Y-%m-%d %H:%M')
         amount = float(tx['amount']) / (10 ** tx['token_decimals'])
         direction = "→" if tx['flow'] == 'out' else "←"
-        
-        # Format addresses with styles inline
-        from_last5 = f"...{tx['from_address'][-5:]}"
-        to_last5 = f"...{tx['to_address'][-5:]}"
 
-        from_color = "[dim]" if tx["from_address"] == input_address else "[blue]"
-        to_color = "[dim]" if tx["to_address"] == input_address else "[blue]"
+        # Extract last 5 characters safely
+        from_last5 = f"...{tx['from_address'][-5:]}" if tx.get('from_address') else "[N/A]"
+        to_last5 = f"...{tx['to_address'][-5:]}" if tx.get('to_address') else "[N/A]"
 
-        from_addr = f"{from_color}{from_last5}"
-        to_addr = f"{to_color}{to_last5}"
+        # Apply color formatting based on whether the address matches input_address
+        from_addr = f"[dim]{from_last5}" if tx.get("from_address") == input_address else f"[blue]{from_last5}"
+        to_addr = f"[dim]{to_last5}" if tx.get("to_address") == input_address else f"[blue]{to_last5}"
+
         table.add_row(
             timestamp,
-            tx['activity_type'].replace('ACTIVITY_', ''),
+            tx['activity_type'].replace('ACTIVITY_', ''),  # Quitar el prefijo ACTIVITY_
             f"{amount:.4f} {direction}",
             from_addr,
             to_addr,
             f"${tx.get('value', 0):.2f}",
-            end_section=True  # Add subtle separator between rows
+            end_section=True  # Agrega un separador sutil entre filas
         )
-    
+
     console.print(table)
 
 def display_balance_history(transactions: List[Dict[str, Any]], current_balance: float, console: Console, input_address: str):
