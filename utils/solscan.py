@@ -140,9 +140,14 @@ def display_transactions_table(transactions: List[Dict[str, Any]], console: Cons
         direction = "→" if tx['flow'] == 'out' else "←"
         
         # Format addresses with styles inline
-        from_addr = f"[dim]{f'...{tx['from_address'][-5:]}'}" if tx['from_address'] == input_address else f"[blue]{f'...{tx['from_address'][-5:]}'}"
-        to_addr = f"[dim]{f'...{tx['to_address'][-5:]}'}" if tx['to_address'] == input_address else f"[blue]{f'...{tx['to_address'][-5:]}'}"
-        
+        from_last5 = f"...{tx['from_address'][-5:]}"
+        to_last5 = f"...{tx['to_address'][-5:]}"
+
+        from_color = "[dim]" if tx["from_address"] == input_address else "[blue]"
+        to_color = "[dim]" if tx["to_address"] == input_address else "[blue]"
+
+        from_addr = f"{from_color}{from_last5}"
+        to_addr = f"{to_color}{to_last5}"
         table.add_row(
             timestamp,
             tx['activity_type'].replace('ACTIVITY_', ''),
