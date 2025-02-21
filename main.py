@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
 
-from utils.solscan import SolscanAPI, display_dex_trading_summary, display_transactions_table
+from utils.solscan import SolscanAPI, display_dex_trading_summary, display_transactions_table, filter_token_stats
 
 def is_sol_token(token: str) -> bool:
     """Check if a token address is SOL"""
@@ -134,7 +134,7 @@ def main():
             if arg == "-f":
                 if not len(sys.argv) > i+1:
                     print("Error: Filter required")
-                    print_usage()
+                    filter_token_stats(None, '')
                     sys.exit(1)
                 filter = sys.argv[i+1]
                 break

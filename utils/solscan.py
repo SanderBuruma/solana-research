@@ -766,26 +766,69 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
         Filtered token statistics dictionary
     """
     if not filter_str:
-        print("\nFilter Usage:")
-        print("Format: -f \"key:operator value[;key:operator value...]\"")
-        print("\nAvailable Keys:")
-        print("30droip  - 30 Day ROI Percentage")
-        print("wr       - Win Rate")
-        print("mi       - Median Investment")
-        print("ml       - Median Loss")
-        print("mw       - Median Winnings")
-        print("mlp      - Median Loss Percentage")
-        print("mwp      - Median Winnings Percentage")
-        print("mht      - Median Hold Time (in seconds)")
-        print("t        - SOL Swaps Count")
-        print("fmc      - First Market Cap")
-        print("\nOperators: >, <, >=, <=, =")
-        print("\nExamples:")
-        print("-f \"t:>500\"           - Filter tokens with more than 500 swaps")
-        print("-f \"fmc:>=25000\"       - Filter tokens with first market cap >= 25000")
-        print("-f \"wr:>50\"            - Filter tokens with win rate > 50%")
-        print("-f \"mht:>86400\"        - Filter tokens held more than 24 hours")
-        print("-f \"t:>500;fmc:>25000\" - Combine multiple filters")
+        from rich.console import Console
+        from rich.table import Table
+        from rich.panel import Panel
+        from rich.text import Text
+
+        console = Console()
+
+        # Create table for filter keys
+        keys_table = Table(title="[bold cyan]Available Filter Keys", show_header=True, header_style="bold magenta")
+        keys_table.add_column("Key", style="yellow")
+        keys_table.add_column("Description", style="green")
+        
+        # Add rows for each filter key
+        keys_table.add_row("30droip", "30 Day ROI Percentage")
+        keys_table.add_row("wr", "Win Rate")
+        keys_table.add_row("mi", "Median Investment")
+        keys_table.add_row("ml", "Median Loss")
+        keys_table.add_row("mw", "Median Winnings")
+        keys_table.add_row("mlp", "Median Loss Percentage")
+        keys_table.add_row("mwp", "Median Winnings Percentage")
+        keys_table.add_row("mht", "Median Hold Time (in seconds)")
+        keys_table.add_row("t", "SOL Swaps Count")
+        keys_table.add_row("fmc", "First Market Cap")
+        keys_table.add_row("tps", "Tokens per SOL at investment")
+
+        # Create table for operators
+        operators_table = Table(title="[bold cyan]Available Operators", show_header=True, header_style="bold magenta")
+        operators_table.add_column("Operator", style="yellow")
+        operators_table.add_column("Description", style="green")
+        
+        operators_table.add_row(">", "Greater than")
+        operators_table.add_row("<", "Less than")
+        operators_table.add_row(">=", "Greater than or equal to")
+        operators_table.add_row("<=", "Less than or equal to")
+        operators_table.add_row("=", "Equal to")
+
+        # Create table for examples
+        examples_table = Table(title="[bold cyan]Filter Examples", show_header=True, header_style="bold magenta")
+        examples_table.add_column("Example", style="yellow")
+        examples_table.add_column("Description", style="green")
+        
+        examples_table.add_row("-f \"t:>500\"", "Filter tokens with more than 500 swaps")
+        examples_table.add_row("-f \"fmc:>=25000\"", "Filter tokens with first market cap >= 25000")
+        examples_table.add_row("-f \"wr:>50\"", "Filter tokens with win rate > 50%")
+        examples_table.add_row("-f \"mht:>86400\"", "Filter tokens held more than 24 hours")
+        examples_table.add_row("-f \"t:>500;fmc:>25000\"", "Multiple filters combined")
+        examples_table.add_row("-f \"tps:>1000000\"", "Filter tokens with >1M tokens per SOL exchange rate at first investment")
+
+        # Format text
+        format_text = Text("\nFilter Format: ", style="bold white")
+        format_text.append("key:operator value", style="cyan")
+        format_text.append("\nMultiple filters: ", style="bold white")
+        format_text.append("key1:operator value1;key2:operator value2", style="cyan")
+
+        # Display everything
+        console.print("\n[bold]Filter Usage Guide[/bold]")
+        console.print(format_text)
+        console.print()
+        console.print(keys_table)
+        console.print()
+        console.print(operators_table)
+        console.print()
+        console.print(examples_table)
         return token_stats
 
     filtered_stats = {}
