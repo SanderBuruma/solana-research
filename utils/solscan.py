@@ -4,10 +4,43 @@ from datetime import datetime, timedelta
 from rich.console import Console
 from rich.table import Table
 from typing import Dict, Any, Optional, List, Tuple
+import random
+import string
+
+def generate_random_token() -> str:
+    """
+    Generate a random Solscan authentication token following the same pattern as the JavaScript code.
+    Returns a string that includes 'B9dls0fK' at a random position.
+    """
+    # Character set for random generation (excluding '=' and '-' which will be added later)
+    chars = string.ascii_letters + string.digits
+    
+    # Generate two 16-character strings
+    t = ''.join(random.choice(chars) for _ in range(16))
+    r = ''.join(random.choice(chars) for _ in range(16))
+    
+    # Random position for inserting the fixed string (0-30)
+    n = random.randint(0, 30)
+    
+    # Concatenate strings and insert fixed string
+    combined = t + r
+    result = combined[:n] + "B9dls0fK" + combined[n:]
+    
+    # Add some '=' and '-' characters randomly
+    result = result.replace(random.choice(result), '=', 2)  # Replace 2 random chars with '='
+    result = result.replace(random.choice(result), '-', 2)  # Replace 2 random chars with '-'
+    
+    return result
 
 class SolscanAPI:
     def __init__(self):
         self.base_url = 'https://api-v2.solscan.io/v2'
+        # Try to get token from environment, generate random if not available
+        auth_token = os.getenv('SOLSCAN_SOL_AUT')
+        if not auth_token:
+            auth_token = generate_random_token()
+            Console().print(f"\n[yellow]Warning: SOLSCAN_SOL_AUT not found in environment. Using generated token: {auth_token}.\nSet it in the .env file to avoid this warning.[/yellow]")
+        
         self.headers = {
             'accept': 'application/json, text/plain, */*',
             'accept-language': 'en-GB,en;q=0.8',
@@ -21,7 +54,7 @@ class SolscanAPI:
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-site',
             'sec-gpc': '1',
-            'sol-aut': os.getenv('SOLSCAN_SOL_AUT'),
+            'sol-aut': auth_token,
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
         }
         self.console = Console()
