@@ -39,7 +39,7 @@ class SolscanAPI:
         auth_token = os.getenv('SOLSCAN_SOL_AUT')
         if not auth_token:
             auth_token = generate_random_token()
-            Console().print(f"\n[yellow]Warning: SOLSCAN_SOL_AUT not found in environment. Using generated token: {auth_token}.\nSet it in the .env file to avoid this warning.[/yellow]")
+            Console().print(f"\n[yellow]Warning: SOLSCAN_SOL_AUT not found in environment. Using generated token: {auth_token}\nSet it in the .env file to avoid this warning.[/yellow]")
         
         self.headers = {
             'accept': 'application/json, text/plain, */*',
