@@ -37,6 +37,9 @@ def main():
         print_usage()
         sys.exit(1)
 
+    # Load environment variables
+    load_dotenv()
+    
     api = SolscanAPI()
     console = Console()
     option = sys.argv[1]
