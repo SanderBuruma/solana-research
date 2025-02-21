@@ -66,34 +66,52 @@ def main():
                 for token in tokens:
                     token_name = token.get("tokenName", "Unknown")
                     token_symbol = token.get("tokenSymbol", "Unknown")
+                    token_address = token.get("tokenAddress", "Unknown")
                     balance_token = int(float(token.get("balance", 0)))  # Round down to integer
                     usd_value = token.get("value", 0)
                     true_value_in_sol = (usd_value / sol_price) if sol_price > 0 else usd_value
                     if balance_token == 0 or true_value_in_sol < 0.01:
                         continue
                     total_tokens_value += true_value_in_sol
-                    tokens_to_display.append((token_name, token_symbol, balance_token, true_value_in_sol))
+                    tokens_to_display.append((token_name, token_symbol, token_address, balance_token, true_value_in_sol))
                 
-                # Compute total SOL balance
+                # Sort tokens by SOL value, descending
+                tokens_to_display.sort(key=lambda x: x[4], reverse=True)
+                
+                # Compute total SOL balance and percentages
                 total_sol = (balance if balance is not None else 0) + total_tokens_value
+                sol_percentage = (balance / total_sol * 100) if total_sol > 0 else 0
+                token_percentage = (total_tokens_value / total_sol * 100) if total_sol > 0 else 0
                 
-                # Print summary with aligned numbers
-                summary = (f"\nAccount SOL: {balance:15.9f} SOL\n"
-                         f"Token SOL:   {total_tokens_value:15.9f} SOL\n"
-                         f"Total SOL:   {total_sol:15.9f} SOL")
+                # Print summary with aligned numbers and percentages
+                summary = (f"\nAccount SOL: {balance:15.9f} SOL ([cyan]{sol_percentage:.1f}%[/cyan])\n"
+                         f"Token SOL:   {total_tokens_value:15.9f} SOL ([cyan]{token_percentage:.1f}%[/cyan])\n"
+                         f"Total SOL:   {total_sol:15.9f} SOL ([green]100%[/green])")
                 console.print(summary)
                 
                 # Display token table
                 from rich.table import Table
                 token_table = Table(title="\nHeld Tokens")
+                token_table.add_column("Token Address", style="dim")
                 token_table.add_column("Token Name", style="cyan")
                 token_table.add_column("Token Symbol", style="magenta")
                 token_table.add_column("Balance", justify="right", style="yellow")
                 token_table.add_column("Value in SOL", justify="right", style="green")
-                for token_name, token_symbol, balance_token, true_value_in_sol in tokens_to_display:
+                token_table.add_column("% of Total", justify="right", style="cyan")
+                
+                for token_name, token_symbol, token_address, balance_token, true_value_in_sol in tokens_to_display:
                     # Format balance with k/m/b suffix
                     formatted_balance = format_token_amount(balance_token)
-                    token_table.add_row(token_name, token_symbol, formatted_balance, f"{true_value_in_sol:.3f}")
+                    # Calculate percentage of total portfolio
+                    token_percent = (true_value_in_sol / total_sol * 100) if total_sol > 0 else 0
+                    token_table.add_row(
+                        token_address,
+                        token_name,
+                        token_symbol,
+                        formatted_balance,
+                        f"{true_value_in_sol:.3f}",
+                        f"{token_percent:.1f}%"
+                    )
                 console.print(token_table)
         else:
             console.print("[yellow]No token account data found.[/yellow]")
