@@ -62,7 +62,7 @@ pip install -r requirements.txt
    - Create a `.env` file in the project root
    - Add solscan token to `.env` file:
      ```
-     SOLSCAN_TOKEN=your_token_here
+     SOLSCAN_SOL_AUT=your_token_here
      ```
    - Add your BullX authentication token:
      ```
