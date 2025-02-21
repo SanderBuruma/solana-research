@@ -126,11 +126,11 @@ def display_transactions_table(transactions: List[Dict[str, Any]], console: Cons
     table = Table(title="Transaction History")
     
     # Add columns
-    table.add_column("Time", justify="left", style="cyan")
-    table.add_column("Type", justify="center", style="magenta")
-    table.add_column("Amount (SOL)", justify="right", style="green")
-    table.add_column("From", justify="right")
-    table.add_column("To", justify="left")
+    table.add_column("Time", style="bold")
+    table.add_column("Type", style="magenta")
+    table.add_column("Amount (SOL)", style="cyan")
+    table.add_column("From", style="bold")
+    table.add_column("To", style="bold")
     table.add_column("Value (USD)", justify="right", style="yellow")
     
     # Add rows
@@ -139,9 +139,16 @@ def display_transactions_table(transactions: List[Dict[str, Any]], console: Cons
         amount = float(tx['amount']) / (10 ** tx['token_decimals'])
         direction = "→" if tx['flow'] == 'out' else "←"
         
-        # Format addresses with styles inline
-        from_addr = f"[dim]{f'...{tx['from_address'][-5:]}'}" if tx['from_address'] == input_address else f"[blue]{f'...{tx['from_address'][-5:]}'}"
-        to_addr = f"[dim]{f'...{tx['to_address'][-5:]}'}" if tx['to_address'] == input_address else f"[blue]{f'...{tx['to_address'][-5:]}'}"
+        # Extract last 5 characters safely
+        from_last5 = f"...{tx['from_address'][-5:]}" if tx.get('from_address') else "[N/A]"
+        to_last5 = f"...{tx['to_address'][-5:]}" if tx.get('to_address') else "[N/A]"
+
+        # Apply color formatting based on whether the address matches input_address
+        from_addr = f"[dim]{from_last5}" if tx.get("from_address") == input_address else f"[blue]{from_last5}"
+        to_addr = f"[dim]{to_last5}" if tx.get("to_address") == input_address else f"[blue]{to_last5}"
+
+        # Format the value with color based on whether it's positive or negative
+        value_color = "green" if not tx.get("from_address") == input_address else "red"
         
         table.add_row(
             timestamp,
@@ -149,8 +156,7 @@ def display_transactions_table(transactions: List[Dict[str, Any]], console: Cons
             f"{amount:.4f} {direction}",
             from_addr,
             to_addr,
-            f"${tx.get('value', 0):.2f}",
-            end_section=True  # Add subtle separator between rows
+            f"[{value_color}]${tx.get('value', 0):.2f}[/{value_color}]"
         )
     
     console.print(table)
