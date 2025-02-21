@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import os
 
-from utils.solscan import SolscanAPI, display_dex_trading_summary, display_transactions_table, filter_token_stats
+from utils.solscan import SolscanAPI, display_dex_trading_summary, display_transactions_table, filter_token_stats, format_token_amount
 
 def is_sol_token(token: str) -> bool:
     """Check if a token address is SOL"""
@@ -66,7 +66,7 @@ def main():
                 for token in tokens:
                     token_name = token.get("tokenName", "Unknown")
                     token_symbol = token.get("tokenSymbol", "Unknown")
-                    balance_token = token.get("balance", 0)
+                    balance_token = int(float(token.get("balance", 0)))  # Round down to integer
                     usd_value = token.get("value", 0)
                     true_value_in_sol = (usd_value / sol_price) if sol_price > 0 else usd_value
                     if balance_token == 0 or true_value_in_sol < 0.01:
@@ -91,7 +91,9 @@ def main():
                 token_table.add_column("Balance", justify="right", style="yellow")
                 token_table.add_column("Value in SOL", justify="right", style="green")
                 for token_name, token_symbol, balance_token, true_value_in_sol in tokens_to_display:
-                    token_table.add_row(token_name, token_symbol, f"{balance_token}", f"{true_value_in_sol:.3f}")
+                    # Format balance with k/m/b suffix
+                    formatted_balance = format_token_amount(balance_token)
+                    token_table.add_row(token_name, token_symbol, formatted_balance, f"{true_value_in_sol:.3f}")
                 console.print(token_table)
         else:
             console.print("[yellow]No token account data found.[/yellow]")
