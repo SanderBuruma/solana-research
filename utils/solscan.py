@@ -248,9 +248,15 @@ def get_hold_time_color(first: datetime, last: datetime) -> str:
         return "yellow"
     return "green"
 
-def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, wallet_address: str):
+def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, wallet_address: str, filter_str: Optional[str] = None):
     """
     Display DEX trading summary grouped by token and save to CSV
+    
+    Args:
+        trades: List of trades to analyze
+        console: Rich console for output
+        wallet_address: Address of the wallet being analyzed
+        filter_str: Optional filter string to filter token statistics
     """
     # Dictionary to track token stats
     token_stats = {}
@@ -374,6 +380,20 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             if stats['last_trade']:
                 duration = stats['last_trade'] - stats['first_trade']
                 stats['hold_time'] = duration
+
+    # Apply filtering before displaying results
+    if filter_str:
+        # Show the filter being applied
+        console.print(f"\n[yellow]Applying filter: [cyan]{filter_str}[/cyan][/yellow]")
+        token_stats = filter_token_stats(token_stats, filter_str)
+        if not token_stats:
+            console.print("[red]No tokens match the specified filter criteria[/red]")
+            return
+        console.print(f"[green]{len(token_stats)} tokens match the filter criteria[/green]\n")
+    elif filter_str == "":
+        # Show filter usage information
+        filter_token_stats({}, None)
+        return
 
     # Sort by first trade date
     sorted_tokens = sorted(
@@ -718,3 +738,130 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
 
     console.print("\n[bold]Transaction Summary[/bold]")
     console.print(summary_table)
+
+def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+    """
+    Filter token statistics based on key-value pairs.
+    
+    Args:
+        token_stats: Dictionary of token statistics
+        filter_str: Filter string in format "key1:value1;key2:value2"
+                   where key can be:
+                   - 30droip (30D ROI %)
+                   - wr (winrate)
+                   - mi (median investment)
+                   - ml (median loss)
+                   - mw (median winnings)
+                   - mlp (median loss percentage)
+                   - mwp (median winnings percentage)
+                   - mht (median hold time, in seconds)
+                   - t (trades)
+                   - tps (tokens per sol, at time invested)
+                   
+                   value format: operator number
+                   operators: >, <, >=, <=, =
+                   eg. -f "t:>500;tps:>1000000"
+                   
+    Returns:
+        Filtered token statistics dictionary
+    """
+    if not filter_str:
+        print("\nFilter Usage:")
+        print("Format: -f \"key:operator value[;key:operator value...]\"")
+        print("\nAvailable Keys:")
+        print("30droip  - 30 Day ROI Percentage")
+        print("wr       - Win Rate")
+        print("mi       - Median Investment")
+        print("ml       - Median Loss")
+        print("mw       - Median Winnings")
+        print("mlp      - Median Loss Percentage")
+        print("mwp      - Median Winnings Percentage")
+        print("mht      - Median Hold Time (in seconds)")
+        print("t        - SOL Swaps Count")
+        print("fmc      - First Market Cap")
+        print("\nOperators: >, <, >=, <=, =")
+        print("\nExamples:")
+        print("-f \"t:>500\"           - Filter tokens with more than 500 swaps")
+        print("-f \"fmc:>=25000\"       - Filter tokens with first market cap >= 25000")
+        print("-f \"wr:>50\"            - Filter tokens with win rate > 50%")
+        print("-f \"mht:>86400\"        - Filter tokens held more than 24 hours")
+        print("-f \"t:>500;fmc:>25000\" - Combine multiple filters")
+        return token_stats
+
+    filtered_stats = {}
+    filters = filter_str.split(';')
+    
+    for token, stats in token_stats.items():
+        include_token = True
+        
+        for filter_item in filters:
+            if ':' not in filter_item:
+                continue
+                
+            key, value = filter_item.split(':', 1)
+            # Extract operator and value
+            import re
+            match = re.match(r'([><]=?|=)(\d+\.?\d*)', value.strip())
+            if not match:
+                continue
+                
+            operator, threshold = match.groups()
+            threshold = float(threshold)
+            
+            # Get the actual value based on the key
+            actual_value = None
+            
+            if key == '30droip':
+                # Calculate 30-day ROI percentage
+                invested = stats.get('30d', {}).get('invested', 0)
+                received = stats.get('30d', {}).get('received', 0)
+                actual_value = ((received / invested) - 1) * 100 if invested > 0 else 0
+            elif key == 'wr':
+                # Calculate win rate
+                wins = len([p for p in stats.get('profits', []) if p > 0])
+                total = len(stats.get('profits', [])) + len(stats.get('losses', []))
+                actual_value = (wins / total * 100) if total > 0 else 0
+            elif key == 'mi':
+                actual_value = stats.get('median_investment', 0)
+            elif key == 'ml':
+                actual_value = stats.get('median_loss', 0)
+            elif key == 'mw':
+                actual_value = stats.get('median_profit', 0)
+            elif key == 'mlp':
+                actual_value = stats.get('median_loss_roi', 0)
+            elif key == 'mwp':
+                actual_value = stats.get('median_profit_roi', 0)
+            elif key == 'mht':
+                hold_time = stats.get('hold_time')
+                actual_value = hold_time.total_seconds() if hold_time else 0
+            elif key == 't':
+                actual_value = stats.get('trade_count', 0)
+            elif key == 'tps':
+                # Tokens per sol
+                tokens_bought = stats.get('tokens_bought', 0)
+                first_trade_rate = stats['sol_invested'] / tokens_bought if tokens_bought > 0 else 0
+                actual_value = 1/first_trade_rate if first_trade_rate > 0 else 0
+            
+            if actual_value is None:
+                include_token = False
+                break
+                
+            # Compare using the operator
+            if operator == '>':
+                include_token = actual_value > threshold
+            elif operator == '<':
+                include_token = actual_value < threshold
+            elif operator == '>=':
+                include_token = actual_value >= threshold
+            elif operator == '<=':
+                include_token = actual_value <= threshold
+            elif operator == '=':
+                include_token = abs(actual_value - threshold) < 1e-6  # Float comparison
+                
+            if not include_token:
+                break
+                
+        if include_token:
+            filtered_stats[token] = stats
+            
+    return filtered_stats

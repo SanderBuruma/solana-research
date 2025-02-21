@@ -122,16 +122,28 @@ def main():
             api.console.print("[red]Failed to fetch transactions or no transactions found[/red]")
 
     elif option == "-3":
-        if len(sys.argv) != 3:
+        if len(sys.argv) <= 2:
             print("Error: Address required for balance history")
             print_usage()
             sys.exit(1)
         address = sys.argv[2]
+
+        # Get the filter string wherever it appears if it appears
+        filter = None
+        for i, arg in enumerate(sys.argv):
+            if arg == "-f":
+                if not len(sys.argv) > i+1:
+                    print("Error: Filter required")
+                    print_usage()
+                    sys.exit(1)
+                filter = sys.argv[i+1]
+                break
+
         api.console.print("\nFetching DEX trading history...", style="yellow")
         trades = api.get_dex_trading_history(address)
         if trades:
             api.console.print(f"\nFound [green]{len(trades)}[/green] DEX trades\n")
-            display_dex_trading_summary(trades, api.console, address)
+            display_dex_trading_summary(trades, api.console, address, filter)
         else:
             api.console.print("[red]No DEX trading history found[/red]")
 
