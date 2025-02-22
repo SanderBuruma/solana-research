@@ -6,6 +6,7 @@ from rich.table import Table
 from typing import Dict, Any, Optional, List, Tuple
 import random
 import string
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 def generate_random_token() -> str:
     """
@@ -98,33 +99,59 @@ class SolscanAPI:
         """
         Get complete DEX trading history for an account, up to 1 month old
         """
+        # First get total number of transactions
+        endpoint = f'account/activity/dextrading/total?address={address}'
+        total_data = self._make_request(endpoint)
+        total_trades = total_data.get('data', 0) if total_data and total_data.get('success') else 0
+        if total_trades > 10100:
+            total_trades = 10100
+        
+        if total_trades == 0:
+            return []
+            
         page = 1
         page_size = 100
         all_trades = []
         one_month_ago = datetime.now().timestamp() - (30 * 86400)  # 30 days in seconds
         
-        while True:
-            endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP'
-            data = self._make_request(endpoint)
+        # Create progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=self.console,
+            transient=True
+        ) as progress:
+            task = progress.add_task(f"[yellow]Fetching {total_trades} DEX trades...", total=total_trades)
             
-            if not data or not data.get('success') or not data.get('data'):
-                break
+            while page < 101:
+                endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP'
+                data = self._make_request(endpoint)
                 
-            trades = data['data']
-            if not trades:
-                break
-            
-            # Check each trade's timestamp before adding
-            for trade in trades:
-                if trade['block_time'] < one_month_ago:
-                    # Stop gathering data if we reach trades older than a month
-                    return all_trades
-                all_trades.append(trade)
-            
-            if len(trades) < page_size:
-                break
+                if not data or not data.get('success') or not data.get('data'):
+                    break
+                    
+                trades = data['data']
+                if not trades:
+                    break
                 
-            page += 1
+                # Check each trade's timestamp before adding
+                for trade in trades:
+                    if trade['block_time'] < one_month_ago:
+                        # Stop gathering data if we reach trades older than a month
+                        progress.update(task, completed=len(all_trades))
+                        return all_trades
+                    all_trades.append(trade)
+                    progress.update(task, advance=1)
+                
+                if len(trades) < page_size:
+                    break
+                    
+                page += 1
+            
+            # Update progress one final time
+            progress.update(task, completed=len(all_trades))
         
         return all_trades
 
