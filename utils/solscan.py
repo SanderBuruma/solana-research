@@ -990,3 +990,252 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
             filtered_stats[token] = stats
             
     return filtered_stats
+
+def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: Console) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]]:
+    """
+    Analyze trades and return structured data instead of displaying it.
+    Returns a tuple of:
+    - List of token dictionaries sorted by last trade time
+    - ROI statistics dictionary
+    - Transaction summary dictionary
+    """
+    # Dictionary to track token stats
+    token_stats = {}
+    period_stats = {
+        '24h': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 86400},
+        '7d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 7 * 86400},
+        '30d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 30 * 86400}
+    }
+    SOL_ADDRESSES = {
+        "So11111111111111111111111111111111111111112",
+        "So11111111111111111111111111111111111111111"
+    }
+
+    def is_sol_token(token: str) -> bool:
+        return token in SOL_ADDRESSES
+    
+    # First pass: collect all trades and update period stats
+    for trade in trades:
+        amount_info = trade.get('amount_info', {})
+        if not amount_info:
+            continue
+            
+        token1 = amount_info.get('token1')
+        token2 = amount_info.get('token2')
+        token1_decimals = amount_info.get('token1_decimals', 0)
+        token2_decimals = amount_info.get('token2_decimals', 0)
+        
+        if not token1 or not token2:
+            continue
+        
+        try:
+            amount1_raw = amount_info.get('amount1')
+            amount2_raw = amount_info.get('amount2')
+            amount1 = float(amount1_raw if amount1_raw is not None else 0) / (10 ** token1_decimals)
+            amount2 = float(amount2_raw if amount2_raw is not None else 0) / (10 ** token2_decimals)
+        except (ValueError, TypeError):
+            continue
+        
+        trade_time = datetime.fromtimestamp(trade['block_time'])
+        trade_timestamp = trade['block_time']
+        
+        # Update period stats
+        for period, stats in period_stats.items():
+            if trade_timestamp >= stats['start_time']:
+                if is_sol_token(token1):
+                    stats['invested'] += amount1
+                elif is_sol_token(token2):
+                    stats['received'] += amount2
+        
+        # Initialize token stats if needed
+        for token in [token1, token2]:
+            if token and not is_sol_token(token) and token not in token_stats:
+                token_stats[token] = {
+                    'sol_invested': 0,
+                    'sol_received': 0,
+                    'tokens_bought': 0,
+                    'tokens_sold': 0,
+                    'last_trade': None,
+                    'first_trade': None,
+                    'last_sol_rate': 0,
+                    'token_price_usdt': 0,
+                    'decimals': 0,
+                    'name': '',
+                    'symbol': '',
+                    'hold_time': None,
+                    'trade_count': 0
+                }
+        
+        # Update token stats
+        if is_sol_token(token1) and not is_sol_token(token2):
+            token_stats[token2]['sol_invested'] += amount1
+            token_stats[token2]['tokens_bought'] += amount2
+            token_stats[token2]['last_sol_rate'] = amount1 / (amount2 or 0.0000000001)
+            token_stats[token2]['last_trade'] = max(trade_time, token_stats[token2]['last_trade']) if token_stats[token2]['last_trade'] else trade_time
+            token_stats[token2]['first_trade'] = min(trade_time, token_stats[token2]['first_trade']) if token_stats[token2]['first_trade'] else trade_time
+        elif is_sol_token(token2) and not is_sol_token(token1):
+            token_stats[token1]['sol_received'] += amount2
+            token_stats[token1]['tokens_sold'] += amount1
+            token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)
+            token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
+            token_stats[token1]['first_trade'] = min(trade_time, token_stats[token1]['first_trade']) if token_stats[token1]['first_trade'] else trade_time
+        
+        if token1 and not is_sol_token(token1):
+            token_stats[token1]['trade_count'] += 1
+        if token2 and not is_sol_token(token2):
+            token_stats[token2]['trade_count'] += 1
+
+    # Fetch token prices
+    api = SolscanAPI()
+    sol_price = api.get_token_price("So11111111111111111111111111111111111111112")
+    sol_price_usdt = sol_price.get('price_usdt', 0) if sol_price else 0
+
+    tokens_to_fetch = sum(1 for token, stats in token_stats.items() if stats['tokens_bought'] - stats['tokens_sold'] >= 100)
+
+    if tokens_to_fetch > 0:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+            transient=True
+        ) as progress:
+            task = progress.add_task(f"[yellow]Fetching token prices...", total=tokens_to_fetch)
+            
+            for token, stats in token_stats.items():
+                remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
+                if remaining_tokens >= 100:
+                    token_data = api.get_token_price(token)
+                    if token_data:
+                        stats['token_price_usdt'] = token_data.get('price_usdt', 0)
+                        stats['decimals'] = token_data.get('decimals', 0)
+                        stats['name'] = token_data.get('name', '')
+                        stats['symbol'] = token_data.get('symbol', '')
+                    progress.update(task, advance=1)
+
+    # Calculate hold times and prepare token data
+    current_time = datetime.now()
+    token_data_list = []
+    profits = []
+    losses = []
+    investments = []
+    hold_times = []
+
+    for token, stats in token_stats.items():
+        remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
+        sol_profit = stats['sol_received'] - stats['sol_invested']
+        
+        # Calculate remaining value
+        token_price = stats.get('token_price_usdt')
+        if token_price is not None and token_price > 0 and sol_price_usdt > 0:
+            remaining_value = (remaining_tokens * token_price) / sol_price_usdt
+        else:
+            remaining_value = remaining_tokens * stats.get('last_sol_rate', 0)
+        
+        total_token_profit = sol_profit + remaining_value
+        
+        # Calculate first trade market cap
+        tokens_bought = stats.get('tokens_bought', 0)
+        first_trade_rate = stats['sol_invested'] / tokens_bought if tokens_bought > 0 else 0
+        first_trade_mc = first_trade_rate * sol_price_usdt * 1_000_000_000
+
+        # Calculate hold time
+        if stats['first_trade']:
+            if remaining_tokens > 0:
+                stats['last_trade'] = current_time
+            if stats['last_trade']:
+                duration = stats['last_trade'] - stats['first_trade']
+                stats['hold_time'] = duration
+                hold_times.append(duration)
+
+        # Track profits/losses
+        investments.append(stats['sol_invested'])
+        if sol_profit > 0:
+            profits.append(sol_profit)
+        elif sol_profit < 0:
+            losses.append(abs(sol_profit))
+
+        # Create token data dictionary
+        token_data = {
+            'address': token,
+            'hold_time': stats['hold_time'].total_seconds() if stats['hold_time'] else 0,
+            'last_trade': stats['last_trade'].timestamp() if stats['last_trade'] else 0,
+            'first_mc': first_trade_mc,
+            'sol_invested': stats['sol_invested'],
+            'sol_received': stats['sol_received'],
+            'sol_profit': sol_profit,
+            'remaining_value': remaining_value,
+            'total_profit': total_token_profit,
+            'token_price': stats['token_price_usdt'],
+            'trades': stats['trade_count']
+        }
+        token_data_list.append(token_data)
+
+    # Sort by last trade time
+    token_data_list.sort(key=lambda x: x['last_trade'], reverse=True)
+
+    # Prepare ROI data
+    roi_data = {}
+    period_remaining_value = {'24h': 0, '7d': 0, '30d': 0}
+    
+    # Calculate remaining value for each period
+    for token, stats in token_stats.items():
+        remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
+        token_price = stats.get('token_price_usdt')
+        if token_price is not None and token_price > 0 and sol_price_usdt > 0:
+            remaining_value = (remaining_tokens * token_price) / sol_price_usdt
+        else:
+            remaining_value = remaining_tokens * stats.get('last_sol_rate', 0)
+        
+        if stats.get('last_trade'):
+            last_trade_time = stats['last_trade'].timestamp()
+            current_time_ts = current_time.timestamp()
+            if last_trade_time >= current_time_ts - 86400:
+                period_remaining_value['24h'] += remaining_value
+            if last_trade_time >= current_time_ts - 7 * 86400:
+                period_remaining_value['7d'] += remaining_value
+            if last_trade_time >= current_time_ts - 30 * 86400:
+                period_remaining_value['30d'] += remaining_value
+
+    for period, stats in period_stats.items():
+        invested = stats.get('invested', 0)
+        total_received = stats.get('received', 0) + period_remaining_value.get(period, 0)
+        profit = total_received - invested
+        roi_percent = ((total_received / invested) - 1) * 100 if invested > 0 else None
+        
+        roi_data[period] = {
+            'invested': invested,
+            'received': total_received,
+            'profit': profit,
+            'roi_percent': roi_percent
+        }
+
+    # Prepare transaction summary
+    total_defi_txs = len(trades)
+    non_sol_txs = sum(1 for trade in trades if trade.get('amount_info', {}).get('token1') not in SOL_ADDRESSES 
+                      and trade.get('amount_info', {}).get('token2') not in SOL_ADDRESSES)
+    
+    median_profit = sorted(profits)[len(profits)//2] if profits else 0
+    median_loss = sorted(losses)[len(losses)//2] if losses else 0
+    median_investment = sorted(investments)[len(investments)//2] if investments else 0
+    median_hold_time = sorted(hold_times)[len(hold_times)//2] if hold_times else timedelta()
+    
+    total_tokens = len(profits) + len(losses)
+    win_rate = (len(profits) / total_tokens * 100) if total_tokens > 0 else 0
+    
+    tx_summary = {
+        'total_transactions': total_defi_txs,
+        'non_sol_swaps': non_sol_txs,
+        'sol_swaps': total_defi_txs - non_sol_txs,
+        'win_rate': win_rate,
+        'win_rate_ratio': f"{len(profits)}/{total_tokens}",
+        'median_investment': median_investment,
+        'median_profit': median_profit,
+        'median_profit_roi': (median_profit / median_investment * 100) if median_investment > 0 else 0,
+        'median_loss': median_loss,
+        'median_loss_roi': (median_loss / median_investment * 100) if median_investment > 0 else 0,
+        'median_hold_time': median_hold_time.total_seconds()
+    }
+
+    return token_data_list, roi_data, tx_summary

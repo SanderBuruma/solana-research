@@ -1,9 +1,10 @@
 from rich.console import Console
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+from rich.table import Table
 import os
 
-from utils.solscan import SolscanAPI, display_dex_trading_summary, display_transactions_table, filter_token_stats, format_token_amount
+from utils.solscan import SolscanAPI, analyze_trades, display_dex_trading_summary, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
 
 def is_sol_token(token: str) -> bool:
     """Check if a token address is SOL"""
@@ -93,7 +94,6 @@ def main():
                 console.print(summary)
                 
                 # Display token table
-                from rich.table import Table
                 token_table = Table(title="\nHeld Tokens")
                 token_table.add_column("Token Address", style="dim")
                 token_table.add_column("Token Name", style="cyan")
@@ -145,6 +145,8 @@ def main():
             api.console.print("[red]Failed to fetch transactions or no transactions found[/red]")
 
     elif option == "-3":
+        from rich.table import Table
+        
         if len(sys.argv) <= 2:
             print("Error: Address required for balance history")
             print_usage()
@@ -164,11 +166,215 @@ def main():
 
         api.console.print("\nFetching DEX trading history...", style="yellow")
         trades = api.get_dex_trading_history(address)
-        if trades:
-            api.console.print(f"\nFound [green]{len(trades)}[/green] DEX trades\n")
-            display_dex_trading_summary(trades, api.console, address, filter)
-        else:
+        if not trades:
             api.console.print("[red]No DEX trading history found[/red]")
+            return
+
+        api.console.print(f"\nFound [green]{len(trades)}[/green] DEX trades\n")
+        
+        # Use the new analyze_trades function
+        token_data, roi_data, tx_summary = analyze_trades(trades, address, api.console)
+        
+        # Apply filtering if specified
+        if filter:
+            # Convert token_data back to the format expected by filter_token_stats
+            token_stats = {}
+            for token in token_data:
+                token_stats[token['address']] = {
+                    'trade_count': token['trades'],
+                    'hold_time': timedelta(seconds=token['hold_time']),
+                    'sol_invested': token['sol_invested'],
+                    'tokens_bought': 0,  # This will be fixed in analyze_trades
+                }
+            
+            # Show the filter being applied
+            console.print(f"\n[yellow]Applying filter: [cyan]{filter}[/cyan][/yellow]")
+            filtered_stats = filter_token_stats(token_stats, filter)
+            if not filtered_stats:
+                console.print("[red]No tokens match the specified filter criteria[/red]")
+                return
+            # Filter token_data to match filtered_stats
+            token_data = [t for t in token_data if t['address'] in filtered_stats]
+            console.print(f"[green]{len(token_data)} tokens match the filter criteria[/green]\n")
+        elif filter == "":
+            # Show filter usage information
+            filter_token_stats({}, None)
+            return
+
+        # Display token table
+        table = Table(title="DEX Trading Summary")
+        table.add_column("Token", style="dim")
+        table.add_column("Hold Time", justify="right", style="blue")
+        table.add_column("Last Trade", justify="right", style="cyan")
+        table.add_column("First MC", justify="right", style="yellow")
+        table.add_column("SOL Invested", justify="right", style="green")
+        table.add_column("SOL Received", justify="right", style="green")
+        table.add_column("SOL Profit", justify="right", style="green")
+        table.add_column("Remaining", justify="right", style="yellow")
+        table.add_column("Total Profit", justify="right", style="green")
+        table.add_column("Token Price", justify="right", style="magenta")
+        table.add_column("Trades", justify="right", style="cyan")
+
+        for token in token_data:
+            # Format hold time
+            hold_time_td = timedelta(seconds=token['hold_time'])
+            if hold_time_td.days > 0:
+                hold_time = f"{hold_time_td.days}d {hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
+            elif hold_time_td.seconds//3600 > 0:
+                hold_time = f"{hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
+            else:
+                hold_time = f"{(hold_time_td.seconds%3600)//60}m"
+
+            # Format market cap with appropriate suffix and color
+            mc = token['first_mc']
+            if mc >= 1_000_000_000:
+                mc_color = "red"
+                mc_value = f"{mc/1_000_000_000:.1f}B"
+            elif mc >= 200_000_000:
+                mc_color = "yellow"
+                mc_value = f"{mc/1_000_000:.1f}M"
+            elif mc >= 1_000_000:
+                mc_color = "green"
+                mc_value = f"{mc/1_000_000:.1f}M"
+            elif mc >= 250_000:
+                mc_color = "green"
+                mc_value = f"{mc/1_000:.1f}K"
+            elif mc >= 25_000:
+                mc_color = "yellow"
+                mc_value = f"{mc/1_000:.1f}K"
+            else:
+                mc_color = "red"
+                mc_value = f"{mc/1_000:.1f}K"
+
+            profit_color = "green" if token['sol_profit'] >= 0 else "red"
+            total_profit_color = "green" if token['total_profit'] >= 0 else "red"
+            
+            table.add_row(
+                format_token_address(token['address']),
+                hold_time,
+                datetime.fromtimestamp(token['last_trade']).strftime('%Y-%m-%d %H:%M'),
+                f"[{mc_color}]{mc_value}[/{mc_color}]",
+                f"{token['sol_invested']:.3f} ◎",
+                f"{token['sol_received']:.3f} ◎",
+                f"[{profit_color}]{token['sol_profit']:+.3f} ◎[/{profit_color}]",
+                f"{token['remaining_value']:.3f} ◎",
+                f"[{total_profit_color}]{token['total_profit']:+.3f} ◎[/{total_profit_color}]",
+                f"${token['token_price']:.6f}" if token['token_price'] > 0 else "N/A",
+                str(token['trades'])
+            )
+
+        console.print(table)
+
+        # Display ROI table
+        roi_table = Table(title="\nReturn on Investment (ROI)", show_header=True, header_style="bold")
+        roi_table.add_column("Period", style="cyan")
+        roi_table.add_column("SOL Invested", justify="right", style="green")
+        roi_table.add_column("SOL Received", justify="right", style="red")
+        roi_table.add_column("Profit/Loss", justify="right", style="yellow")
+        roi_table.add_column("ROI %", justify="right", style="magenta")
+
+        for period in ['24h', '7d', '30d']:
+            period_data = roi_data[period]
+            profit_color = "green" if period_data['profit'] >= 0 else "red"
+            roi_color = "green" if period_data['roi_percent'] and period_data['roi_percent'] >= 0 else "red"
+            
+            roi_table.add_row(
+                period.upper(),
+                f"{period_data['invested']:.3f} ◎",
+                f"{period_data['received']:.3f} ◎",
+                f"[{profit_color}]{period_data['profit']:+.3f} ◎[/{profit_color}]",
+                f"[{roi_color}]{period_data['roi_percent']:+.2f}%[/{roi_color}]" if period_data['roi_percent'] is not None else "N/A"
+            )
+
+        console.print(roi_table)
+
+        # Display transaction summary table
+        summary_table = Table(title="\nTransaction Summary", show_header=True, header_style="bold")
+        summary_table.add_column("Transaction Type", style="cyan")
+        summary_table.add_column("Count", justify="right", style="yellow")
+        summary_table.add_column("Percentage", justify="right", style="green")
+
+        summary_table.add_row(
+            "Total DeFi Transactions",
+            str(tx_summary['total_transactions']),
+            "100%"
+        )
+        summary_table.add_row(
+            "Non-SOL Token Swaps",
+            str(tx_summary['non_sol_swaps']),
+            f"{(tx_summary['non_sol_swaps']/tx_summary['total_transactions']*100):.1f}%" if tx_summary['total_transactions'] > 0 else "0%"
+        )
+        summary_table.add_row(
+            "SOL-Involved Swaps",
+            str(tx_summary['sol_swaps']),
+            f"{(tx_summary['sol_swaps']/tx_summary['total_transactions']*100):.1f}%" if tx_summary['total_transactions'] > 0 else "0%"
+        )
+
+        summary_table.add_section()
+        win_rate_color = "green" if tx_summary['win_rate'] >= 50 else "red"
+        summary_table.add_row(
+            "Win Rate",
+            f"[{win_rate_color}]{tx_summary['win_rate']:.1f}%[/{win_rate_color}]",
+            f"({tx_summary['win_rate_ratio']} tokens)"
+        )
+        summary_table.add_row(
+            "Median Investment per Token",
+            f"{tx_summary['median_investment']:.3f} ◎",
+            ""
+        )
+        if tx_summary['median_profit'] > 0:
+            summary_table.add_row(
+                "Median Profit per Token",
+                f"[green]+{tx_summary['median_profit']:.3f} ◎ (+{tx_summary['median_profit_roi']:.1f}%)[/green]",
+                f"({tx_summary['win_rate_ratio']} tokens)"
+            )
+        if tx_summary['median_loss'] > 0:
+            summary_table.add_row(
+                "Median Loss per Token",
+                f"[red]-{tx_summary['median_loss']:.3f} ◎ (-{tx_summary['median_loss_roi']:.1f}%)[/red]",
+                f"({tx_summary['win_rate_ratio']} tokens)"
+            )
+
+        median_hold_td = timedelta(seconds=tx_summary['median_hold_time'])
+        if median_hold_td.days > 0:
+            median_hold = f"{median_hold_td.days}d {median_hold_td.seconds//3600}h {(median_hold_td.seconds%3600)//60}m"
+        elif median_hold_td.seconds//3600 > 0:
+            median_hold = f"{median_hold_td.seconds//3600}h {(median_hold_td.seconds%3600)//60}m"
+        else:
+            median_hold = f"{(median_hold_td.seconds%3600)//60}m"
+
+        summary_table.add_row(
+            "Median Hold Time",
+            median_hold,
+            f"({tx_summary['win_rate_ratio']} tokens)"
+        )
+
+        console.print(summary_table)
+
+        # Save to CSV
+        os.makedirs('reports', exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d%H%M')
+        csv_filename = f'reports/{address}.csv'
+        
+        with open(csv_filename, 'w') as f:
+            f.write("Token,First Trade,Hold Time,Last Trade,First MC,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Token Price (USDT),Trades\n")
+            for token in token_data:
+                hold_time_td = timedelta(seconds=token['hold_time'])
+                hold_time = f"{hold_time_td.days}d {hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
+                f.write(f"{token['address']}," + 
+                       f"{datetime.fromtimestamp(token['last_trade']).strftime('%Y-%m-%d %H:%M')}," +
+                       f"{hold_time}," +
+                       f"{datetime.fromtimestamp(token['last_trade']).strftime('%Y-%m-%d %H:%M')}," +
+                       f"{token['first_mc']:.2f}," +
+                       f"{token['sol_invested']:.3f}," +
+                       f"{token['sol_received']:.3f}," +
+                       f"{token['sol_profit']:.3f}," +
+                       f"{token['remaining_value']:.3f}," +
+                       f"{token['total_profit']:.3f}," +
+                       f"{token['token_price']:.6f}," +
+                       f"{token['trades']}\n")
+
+        console.print(f"\n[yellow]Report saved to {csv_filename}[/yellow]")
 
     elif option == "-5":
         if len(sys.argv) < 3:
