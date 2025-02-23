@@ -422,18 +422,34 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     api = SolscanAPI()
     sol_price = api.get_token_price("So11111111111111111111111111111111111111112")
     sol_price_usdt = sol_price.get('price_usdt', 0) if sol_price else 0
-    
-    console.print("\n[yellow]Fetching current token prices...[/yellow]")
-    for token, stats in token_stats.items():
-        remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
-        if remaining_tokens >= 100:  # Only fetch price if significant remaining balance
-            token_data = api.get_token_price(token)
-            if token_data:
-                stats['token_price_usdt'] = token_data.get('price_usdt', 0)
-                stats['decimals'] = token_data.get('decimals', 0)
-                stats['name'] = token_data.get('name', '')
-                stats['symbol'] = token_data.get('symbol', '')
-    
+
+    # Count tokens that need price fetching
+    tokens_to_fetch = sum(1 for token, stats in token_stats.items() if stats['tokens_bought'] - stats['tokens_sold'] >= 100)
+
+    if tokens_to_fetch > 0:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+            transient=True
+        ) as progress:
+            task = progress.add_task(f"[yellow]Fetching token prices...", total=tokens_to_fetch)
+            
+            for token, stats in token_stats.items():
+                remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
+                if remaining_tokens >= 100:  # Only fetch price if significant remaining balance
+                    token_data = api.get_token_price(token)
+                    if token_data:
+                        stats['token_price_usdt'] = token_data.get('price_usdt', 0)
+                        stats['decimals'] = token_data.get('decimals', 0)
+                        stats['name'] = token_data.get('name', '')
+                        stats['symbol'] = token_data.get('symbol', '')
+                    progress.update(task, advance=1)
+    else:
+        console.print("[yellow]No tokens with significant remaining balance to fetch prices for.[/yellow]")
+
     # Calculate hold time for each token
     current_time = datetime.now()
     for token, stats in token_stats.items():
