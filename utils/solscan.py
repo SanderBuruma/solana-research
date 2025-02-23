@@ -1173,7 +1173,7 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
         token_data_list.append(token_data)
 
     # Sort by last trade time
-    token_data_list.sort(key=lambda x: x['last_trade'], reverse=True)
+    token_data_list.sort(key=lambda x: x['last_trade'])  # Removed reverse=True to show oldest first
 
     # Prepare ROI data
     roi_data = {}
