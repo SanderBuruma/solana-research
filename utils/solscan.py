@@ -126,7 +126,7 @@ class SolscanAPI:
             task = progress.add_task(f"[yellow]Fetching {total_trades} DEX trades...", total=total_trades)
             
             while page < 101:
-                endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP&activity_type[]=ACTIVITY_AGG_TOKEN_SWAP'
+                endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP'
                 data = self._make_request(endpoint)
                 
                 if not data or not data.get('success') or not data.get('data'):
