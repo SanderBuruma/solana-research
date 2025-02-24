@@ -339,10 +339,10 @@ def format_token_amount(amount: float) -> str:
         return f"{amount:.0f}"
 
 def format_token_address(address: str) -> str:
-    """Format token address to show first 4 and last 4 characters"""
+    """Format token address to show the full address, except for SOL tokens"""
     if address == "So11111111111111111111111111111111111111112" or address == "So11111111111111111111111111111111111111111":
         return "SOL"
-    return f"{address[:4]}...{address[-4:]}"
+    return address
 
 def format_time_difference(first: datetime, last: datetime) -> str:
     """Format time difference between two dates in a human-readable format"""
