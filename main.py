@@ -56,6 +56,7 @@ def main():
             api.console.print(f"\nAccount Balance: [green]{balance:.9f}[/green] SOL")
         else:
             api.console.print("[red]Failed to fetch account balance[/red]")
+            sys.exit(1)
 
         sol_price_data = api.get_token_price("So11111111111111111111111111111111111111112")
         sol_price = sol_price_data.get("price_usdt", 0) if sol_price_data else 0
@@ -92,6 +93,21 @@ def main():
                          f"Token SOL:   {total_tokens_value:15.9f} SOL ([cyan]{token_percentage:.1f}%[/cyan])\n"
                          f"Total SOL:   {total_sol:15.9f} SOL ([green]100%[/green])")
                 console.print(summary)
+                
+                # Save balance information to CSV
+                timestamp = datetime.now().strftime('%Y-%m-%d:%H-%M-%S')
+                csv_filename = f"./reports/balance_{address}.csv"
+                
+                # Create CSV file with headers if it doesn't exist
+                if not os.path.exists(csv_filename):
+                    with open(csv_filename, 'w') as f:
+                        f.write("timestamp,sol_balance,token_balance,total_balance\n")
+                
+                # Append new balance data
+                with open(csv_filename, 'a') as f:
+                    f.write(f"{timestamp},{balance:.9f},{total_tokens_value:.9f},{total_sol:.9f}\n")
+                
+                console.print(f"\n[yellow]Balance data saved to {csv_filename}[/yellow]")
                 
                 # Display token table
                 token_table = Table(title="\nHeld Tokens")
@@ -145,7 +161,6 @@ def main():
             api.console.print("[red]Failed to fetch transactions or no transactions found[/red]")
 
     elif option == "-3":
-        from rich.table import Table
         
         if len(sys.argv) <= 2:
             print("Error: Address required for balance history")
@@ -495,7 +510,6 @@ def main():
         # Store results for CSV export
         results = []
         
-        from rich.table import Table
         summary_table = Table(title="DeFi Summary for Wallets")
         summary_table.add_column("Address", style="cyan")
         summary_table.add_column("24H ROI %", justify="right", style="magenta")
