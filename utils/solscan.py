@@ -9,6 +9,7 @@ import string
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 import time
 from dotenv import load_dotenv
+import csv
 
 def generate_random_token() -> str:
     """
@@ -99,9 +100,35 @@ class SolscanAPI:
 
     def get_dex_trading_history(self, address: str) -> List[Dict[str, Any]]:
         """
-        Get complete DEX trading history for an account, up to 1 month old
+        Get complete DEX trading history for an account, up to 1 month old.
+        Uses cached transactions from CSV if available and only fetches new transactions.
         """
-        # First get total number of transactions
+        os.makedirs('reports', exist_ok=True)
+        csv_filename = f'reports/transactions_{address}.csv'
+        cached_trades = {}
+        all_trades = []
+
+        # Load existing transactions from CSV if it exists
+        if os.path.exists(csv_filename):
+            with open(csv_filename, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    trans_id = row['trans_id']
+                    cached_trades[trans_id] = {
+                        'block_time': float(row['block_time']),
+                        'trans_id': trans_id,
+                        'amount_info': {
+                            'token1': row['token1'],
+                            'token2': row['token2'],
+                            'token1_decimals': int(row['token1_decimals']),
+                            'token2_decimals': int(row['token2_decimals']),
+                            'amount1': float(row['amount1']),
+                            'amount2': float(row['amount2'])
+                        }
+                    }
+                    all_trades.append(cached_trades[trans_id])
+
+        # Get total number of transactions
         endpoint = f'account/activity/dextrading/total?address={address}'
         total_data = self._make_request(endpoint)
         total_trades = total_data.get('data', 0) if total_data and total_data.get('success') else 0
@@ -109,12 +136,12 @@ class SolscanAPI:
             total_trades = 10100
         
         if total_trades == 0:
-            return []
-            
+            return sorted(all_trades, key=lambda x: x['block_time'])
+
         page = 1
         page_size = 100
-        all_trades = []
         one_month_ago = datetime.now().timestamp() - (30 * 86400)  # 30 days in seconds
+        found_cached = False
         
         # Create progress bar
         with Progress(
@@ -125,9 +152,9 @@ class SolscanAPI:
             console=self.console,
             transient=True
         ) as progress:
-            task = progress.add_task(f"[yellow]Fetching {total_trades} DEX trades...", total=total_trades)
+            task = progress.add_task(f"[yellow]Fetching new DEX trades...", total=total_trades)
             
-            while page < 101:
+            while page < 101 and not found_cached:
                 endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP'
                 data = self._make_request(endpoint)
                 
@@ -138,22 +165,48 @@ class SolscanAPI:
                 if not trades:
                     break
                 
-                # Check each trade's timestamp before adding
+                # Check each trade
                 for trade in trades:
                     if trade['block_time'] < one_month_ago:
-                        # Stop gathering data if we reach trades older than a month
-                        progress.update(task, completed=len(all_trades))
-                        return all_trades
-                    all_trades.append(trade)
-                    progress.update(task, advance=1)
+                        found_cached = True
+                        break
+
+                    trans_id = trade.get('trans_id')
+                    if trans_id in cached_trades:
+                        found_cached = True
+                        break
+
+                    if trans_id not in cached_trades:
+                        all_trades.append(trade)
+                        cached_trades[trans_id] = trade
+                        progress.update(task, advance=1)
                 
                 if len(trades) < page_size:
                     break
                     
                 page += 1
             
-            # Update progress one final time
             progress.update(task, completed=len(all_trades))
+
+        # Sort all trades by block_time
+        all_trades.sort(key=lambda x: x['block_time'])
+
+        # Save updated transactions to CSV
+        with open(csv_filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['trans_id', 'block_time', 'token1', 'token2', 'token1_decimals', 'token2_decimals', 'amount1', 'amount2'])
+            for trade in all_trades:
+                amount_info = trade.get('amount_info', {})
+                writer.writerow([
+                    trade.get('trans_id', ''),
+                    trade.get('block_time', ''),
+                    amount_info.get('token1', ''),
+                    amount_info.get('token2', ''),
+                    amount_info.get('token1_decimals', 0),
+                    amount_info.get('token2_decimals', 0),
+                    amount_info.get('amount1', 0),
+                    amount_info.get('amount2', 0)
+                ])
         
         return all_trades
 
