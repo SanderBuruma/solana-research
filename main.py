@@ -210,10 +210,23 @@ def main():
         table.add_column("SOL Invested", justify="right", style="green")
         table.add_column("SOL Received", justify="right", style="green")
         table.add_column("SOL Profit", justify="right", style="green")
+        table.add_column("Buy Fees", justify="right", style="red")
+        table.add_column("Sell Fees", justify="right", style="red")
+        table.add_column("Total Fees", justify="right", style="red")
         table.add_column("Remaining", justify="right", style="yellow")
         table.add_column("Total Profit", justify="right", style="green")
         table.add_column("Token Price", justify="right", style="magenta")
         table.add_column("Trades", justify="right", style="cyan")
+
+        # Track totals
+        total_invested = 0
+        total_received = 0
+        total_profit = 0
+        total_remaining = 0
+        total_trades = 0
+        total_buy_fees = 0
+        total_sell_fees = 0
+        total_fees = 0
 
         for token in token_data:
             # Format hold time
@@ -249,6 +262,16 @@ def main():
             profit_color = "green" if token['sol_profit'] >= 0 else "red"
             total_profit_color = "green" if token['total_profit'] >= 0 else "red"
             
+            # Update totals
+            total_invested += token['sol_invested']
+            total_received += token['sol_received']
+            total_profit += token['sol_profit']  # Already includes fees
+            total_remaining += token['remaining_value']
+            total_trades += token['trades']
+            total_buy_fees += token['buy_fees']
+            total_sell_fees += token['sell_fees']
+            total_fees += token['total_fees']
+            
             table.add_row(
                 format_token_address(token['address']),
                 hold_time,
@@ -256,12 +279,36 @@ def main():
                 f"[{mc_color}]{mc_value}[/{mc_color}]",
                 f"{token['sol_invested']:.3f} ◎",
                 f"{token['sol_received']:.3f} ◎",
-                f"[{profit_color}]{token['sol_profit']:+.3f} ◎[/{profit_color}]",
+                f"[{profit_color}]{token['sol_profit']:+.3f} ◎[/{profit_color}]",  # Already includes fees
+                f"{token['buy_fees']:.3f} ◎",
+                f"{token['sell_fees']:.3f} ◎",
+                f"{token['total_fees']:.3f} ◎",
                 f"{token['remaining_value']:.3f} ◎",
-                f"[{total_profit_color}]{token['total_profit']:+.3f} ◎[/{total_profit_color}]",
+                f"[{total_profit_color}]{token['total_profit']:+.3f} ◎[/{total_profit_color}]",  # Already includes fees
                 f"${token['token_price']:.6f}" if token['token_price'] > 0 else "N/A",
                 str(token['trades'])
             )
+
+        # Add totals row to table
+        profit_style = "green" if total_profit >= 0 else "red"
+        total_profit_style = "green" if (total_profit + total_remaining) >= 0 else "red"
+        table.add_row(
+            "[bold]TOTAL[/bold]",
+            "",
+            "",
+            "",
+            f"[bold]{total_invested:.3f} ◎[/bold]",
+            f"[bold]{total_received:.3f} ◎[/bold]",
+            f"[bold][{profit_style}]{total_profit:+.3f} ◎[/{profit_style}][/bold]",  # Already includes fees
+            f"[bold]{total_buy_fees:.3f} ◎[/bold]",
+            f"[bold]{total_sell_fees:.3f} ◎[/bold]",
+            f"[bold]{total_fees:.3f} ◎[/bold]",
+            f"[bold]{total_remaining:.3f} ◎[/bold]",
+            f"[bold][{total_profit_style}]{(total_profit + total_remaining):+.3f} ◎[/{total_profit_style}][/bold]",  # Already includes fees
+            "",
+            f"[bold]{total_trades}[/bold]",
+            end_section=True
+        )
 
         console.print(table)
 
@@ -310,11 +357,13 @@ def main():
             f"{(tx_summary['sol_swaps']/tx_summary['total_transactions']*100):.1f}%" if tx_summary['total_transactions'] > 0 else "0%"
         )
 
+        # Add section for profit/loss statistics
         summary_table.add_section()
         win_rate_color = "green" if tx_summary['win_rate'] >= 50 else "red"
+        win_rate = tx_summary['win_rate']
         summary_table.add_row(
             "Win Rate",
-            f"[{win_rate_color}]{tx_summary['win_rate']:.1f}%[/{win_rate_color}]",
+            f"[{win_rate_color}]{win_rate:.1f}%[/{win_rate_color}]",
             f"({tx_summary['win_rate_ratio']} tokens)"
         )
         summary_table.add_row(
@@ -349,6 +398,25 @@ def main():
             f"({tx_summary['win_rate_ratio']} tokens)"
         )
 
+        # Add fee information
+        summary_table.add_section()
+        summary_table.add_row(
+            "Total Buy Fees",
+            f"[red]{total_buy_fees:.3f} ◎[/red]",
+            f"({(total_buy_fees/total_invested*100):.1f}% of invested)" if total_invested > 0 else "N/A"
+        )
+        summary_table.add_row(
+            "Total Sell Fees",
+            f"[red]{total_sell_fees:.3f} ◎[/red]",
+            f"({(total_sell_fees/total_received*100):.1f}% of received)" if total_received > 0 else "N/A"
+        )
+        summary_table.add_row(
+            "Total Fees",
+            f"[red]{total_fees:.3f} ◎[/red]",
+            f"({(total_fees/(total_invested+total_received)*100):.1f}% of volume)" if (total_invested+total_received) > 0 else "N/A"
+        )
+
+        console.print("\n[bold]Transaction Summary[/bold]")
         console.print(summary_table)
 
         # Save to CSV
@@ -357,7 +425,7 @@ def main():
         csv_filename = f'reports/{address}.csv'
         
         with open(csv_filename, 'w') as f:
-            f.write("Token,First Trade,Hold Time,Last Trade,First MC,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Token Price (USDT),Trades\n")
+            f.write("Token,First Trade,Hold Time,Last Trade,First MC,SOL Invested,SOL Received,SOL Profit (after fees),Buy Fees,Sell Fees,Total Fees,Remaining Value,Total Profit (after fees),Token Price (USDT),Trades\n")
             for token in token_data:
                 hold_time_td = timedelta(seconds=token['hold_time'])
                 hold_time = f"{hold_time_td.days}d {hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
@@ -368,11 +436,27 @@ def main():
                        f"{token['first_mc']:.2f}," +
                        f"{token['sol_invested']:.3f}," +
                        f"{token['sol_received']:.3f}," +
-                       f"{token['sol_profit']:.3f}," +
+                       f"{token['sol_profit']:.3f}," +  # Already includes fees
+                       f"{token['buy_fees']:.3f}," +
+                       f"{token['sell_fees']:.3f}," +
+                       f"{token['total_fees']:.3f}," +
                        f"{token['remaining_value']:.3f}," +
-                       f"{token['total_profit']:.3f}," +
+                       f"{token['total_profit']:.3f}," +  # Already includes fees
                        f"{token['token_price']:.6f}," +
                        f"{token['trades']}\n")
+
+            # Add totals to CSV
+            total_overall_profit = total_profit + total_remaining  # Already includes fees
+            f.write(f"TOTAL,,,," +
+                   f",{total_invested:.3f}," +
+                   f"{total_received:.3f}," +
+                   f"{total_profit:.3f}," +  # Already includes fees
+                   f"{total_buy_fees:.3f}," +
+                   f"{total_sell_fees:.3f}," +
+                   f"{total_fees:.3f}," +
+                   f"{total_remaining:.3f}," +
+                   f"{total_overall_profit:.3f},," +  # Already includes fees
+                   f"{total_trades}\n")
 
         console.print(f"\n[yellow]Report saved to {csv_filename}[/yellow]")
 
@@ -418,6 +502,7 @@ def main():
         summary_table.add_column("7D ROI %", justify="right", style="magenta")
         summary_table.add_column("30D ROI %", justify="right", style="magenta")
         summary_table.add_column("30D ROI", justify="right", style="yellow")
+        summary_table.add_column("Total Fees", justify="right", style="red")
         summary_table.add_column("Win Rate", justify="right", style="green")
         summary_table.add_column("Med Investment", justify="right", style="green")
         summary_table.add_column("Med Profit", justify="right", style="green")
@@ -439,6 +524,11 @@ def main():
             # Use analyze_trades to get structured data
             token_data, roi_data, tx_summary = analyze_trades(trades, addr, api.console)
 
+            # Calculate total fees from token data
+            total_fees = sum(token['total_fees'] for token in token_data)
+            total_buy_fees = sum(token['buy_fees'] for token in token_data)
+            total_sell_fees = sum(token['sell_fees'] for token in token_data)
+
             def format_duration(td):
                 days = td.days
                 hours = td.seconds // 3600
@@ -456,7 +546,10 @@ def main():
                 "24H ROI %": f"{roi_data['24h']['roi_percent']:.2f}" if roi_data['24h']['roi_percent'] is not None else "N/A",
                 "7D ROI %": f"{roi_data['7d']['roi_percent']:.2f}" if roi_data['7d']['roi_percent'] is not None else "N/A",
                 "30D ROI %": f"{roi_data['30d']['roi_percent']:.2f}" if roi_data['30d']['roi_percent'] is not None else "N/A",
-                "30D ROI": f"{roi_data['30d']['profit']:.3f}",
+                "30D ROI": f"{roi_data['30d']['profit']:.3f}",  # Already includes fees
+                "Total Fees": f"{total_fees:.3f}",
+                "Buy Fees": f"{total_buy_fees:.3f}",
+                "Sell Fees": f"{total_sell_fees:.3f}",
                 "Win Rate": f"{tx_summary['win_rate']:.1f}",
                 "Profitable/Total": tx_summary['win_rate_ratio'],
                 "Median Investment": f"{tx_summary['median_investment']:.3f}",
@@ -469,11 +562,11 @@ def main():
             
             # Color coding for display
             win_rate_color = "green" if tx_summary['win_rate'] >= 50 else "red"
-            roi_24h = roi_data['24h']['roi_percent']
-            roi_7d = roi_data['7d']['roi_percent']
-            roi_30d = roi_data['30d']['roi_percent']
+            roi_24h = roi_data['24h']['roi_percent']  # Already includes fees
+            roi_7d = roi_data['7d']['roi_percent']    # Already includes fees
+            roi_30d = roi_data['30d']['roi_percent']  # Already includes fees
             
-            # Color ROIs based on profit/loss
+            # Color ROIs based on profit/loss (after fees)
             roi_24h_color = "green" if roi_24h and roi_24h > 0 else "red" if roi_24h and roi_24h < 0 else "white"
             roi_7d_color = "green" if roi_7d and roi_7d > 0 else "red" if roi_7d and roi_7d < 0 else "white"
             roi_30d_color = "green" if roi_30d and roi_30d > 0 else "red" if roi_30d and roi_30d < 0 else "white"
@@ -483,7 +576,8 @@ def main():
                 f"[{roi_24h_color}]{roi_24h:+.2f}%[/{roi_24h_color}]" if roi_24h is not None else "N/A",
                 f"[{roi_7d_color}]{roi_7d:+.2f}%[/{roi_7d_color}]" if roi_7d is not None else "N/A",
                 f"[{roi_30d_color}]{roi_30d:+.2f}%[/{roi_30d_color}]" if roi_30d is not None else "N/A",
-                f"{roi_data['30d']['profit']:.3f} SOL",
+                f"{roi_data['30d']['profit']:.3f} SOL",  # Already includes fees
+                f"[red]{total_fees:.3f} ◎[/red]",
                 f"[{win_rate_color}]{tx_summary['win_rate']:.1f}% ({tx_summary['win_rate_ratio']})[/{win_rate_color}]",
                 f"{tx_summary['median_investment']:.3f} ◎",
                 f"+{tx_summary['median_profit']:.3f} ◎ (+{tx_summary['median_profit_roi']:.1f}%)" if tx_summary['median_profit'] > 0 else "N/A",

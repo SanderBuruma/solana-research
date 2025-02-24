@@ -7,6 +7,8 @@ from typing import Dict, Any, Optional, List, Tuple
 import random
 import string
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+import time
+from dotenv import load_dotenv
 
 def generate_random_token() -> str:
     """
@@ -393,7 +395,10 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
                     'name': '',  # Token name
                     'symbol': '',  # Token symbol
                     'hold_time': None,  # Added for the new hold time calculation
-                    'trade_count': 0  # Added for trade count
+                    'trade_count': 0,  # Added for trade count
+                    'buy_fees': 0,  # Track buy fees
+                    'sell_fees': 0,  # Track sell fees
+                    'total_fees': 0  # Track total fees
                 }
         
         # Update stats based on trade direction
@@ -404,6 +409,16 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             token_stats[token2]['last_sol_rate'] = amount1 / (amount2 or 0.0000000001)  # SOL per token
             token_stats[token2]['last_trade'] = max(trade_time, token_stats[token2]['last_trade']) if token_stats[token2]['last_trade'] else trade_time
             token_stats[token2]['first_trade'] = min(trade_time, token_stats[token2]['first_trade']) if token_stats[token2]['first_trade'] else trade_time
+            
+            # Calculate and add buy fees
+            BUY_FIXED_FEE = float(os.getenv('BUY_FIXED_FEE', 0.002))
+            BUY_PERCENT_FEE = float(os.getenv('BUY_PERCENT_FEE', 0.022912))
+            fixed_fee = BUY_FIXED_FEE
+            percent_fee = amount1 * BUY_PERCENT_FEE
+            total_fee = fixed_fee + percent_fee
+            token_stats[token2]['buy_fees'] += total_fee
+            token_stats[token2]['total_fees'] += total_fee
+            
         elif is_sol_token(token2) and not is_sol_token(token1):
             # Sold tokens for SOL
             token_stats[token1]['sol_received'] += amount2
@@ -411,6 +426,15 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)  # SOL per token
             token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
             token_stats[token1]['first_trade'] = min(trade_time, token_stats[token1]['first_trade']) if token_stats[token1]['first_trade'] else trade_time
+            
+            # Calculate and add sell fees
+            SELL_FIXED_FEE = float(os.getenv('SELL_FIXED_FEE', 0.002))
+            SELL_PERCENT_FEE = float(os.getenv('SELL_PERCENT_FEE', 0.063))
+            fixed_fee = SELL_FIXED_FEE
+            percent_fee = amount2 * SELL_PERCENT_FEE
+            total_fee = fixed_fee + percent_fee
+            token_stats[token1]['sell_fees'] += total_fee
+            token_stats[token1]['total_fees'] += total_fee
         
         # Update trade count
         if token1 and not is_sol_token(token1):
@@ -512,7 +536,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         
         for token, stats in sorted_tokens:
             remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
-            sol_profit = stats['sol_received'] - stats['sol_invested']
+            sol_profit = stats['sol_received'] - stats['sol_invested'] - stats['total_fees']
             
             # Calculate remaining value using current token price if available
             token_price = stats.get('token_price_usdt')
@@ -649,60 +673,52 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     console.print(table)
     console.print(f"\n[yellow]Report saved to {csv_file}[/yellow]")
     
-    # Calculate and display ROI for different periods
+    # Calculate ROI for different time periods
+    current_time = int(time.time())
+    periods = {
+        '24h': {'seconds': 24 * 60 * 60, 'invested': 0, 'received': 0, 'profit': 0, 'roi_percent': None, 'fees': 0},
+        '7d': {'seconds': 7 * 24 * 60 * 60, 'invested': 0, 'received': 0, 'profit': 0, 'roi_percent': None, 'fees': 0},
+        '30d': {'seconds': 30 * 24 * 60 * 60, 'invested': 0, 'received': 0, 'profit': 0, 'roi_percent': None, 'fees': 0}
+    }
+
+    # Calculate period metrics
+    for token in sorted_tokens:
+        for period_name, period_data in periods.items():
+            period_start = current_time - period_data['seconds']
+            if token[1]['last_trade'] >= period_start:
+                period_data['invested'] += token[1]['sol_invested']
+                period_data['received'] += token[1]['sol_received']
+                period_data['fees'] += token[1]['total_fees']
+                # Calculate profit after fees
+                period_profit = token[1]['sol_received'] - token[1]['sol_invested'] - token[1]['total_fees']
+                if token[1]['remaining_value'] > 0:
+                    period_profit += token[1]['remaining_value']
+                period_data['profit'] += period_profit
+
+    # Calculate ROI percentages
+    for period_data in periods.values():
+        if period_data['invested'] > 0:
+            period_data['roi_percent'] = (period_data['profit'] / period_data['invested']) * 100
+
+    # Display ROI table
     console.print("\n[bold]Return on Investment (ROI)[/bold]")
     roi_table = Table(show_header=True, header_style="bold")
-    roi_table.add_column("Period", style="cyan")
-    roi_table.add_column("SOL Invested", justify="right", style="green")
-    roi_table.add_column("SOL Received", justify="right", style="red")
-    roi_table.add_column("Profit/Loss", justify="right", style="yellow")
+    roi_table.add_column("Period", justify="left", style="cyan")
+    roi_table.add_column("Invested", justify="right", style="yellow")
+    roi_table.add_column("Received", justify="right", style="yellow")
+    roi_table.add_column("Profit", justify="right", style="green")
     roi_table.add_column("ROI %", justify="right", style="magenta")
-    
-    # Track remaining value per period
-    period_remaining_value = {
-        '24h': 0,
-        '7d': 0,
-        '30d': 0
-    }
-    
-    # Calculate remaining value for each period using current token prices
-    current_time = datetime.now().timestamp()
-    for token, stats in token_stats.items():
-        remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
-        
-        # Calculate remaining value using current token price if available
-        token_price = stats.get('token_price_usdt')
-        if token_price is not None and token_price > 0 and sol_price_usdt > 0:
-            remaining_value = (remaining_tokens * token_price) / sol_price_usdt
-        else:
-            remaining_value = remaining_tokens * stats.get('last_sol_rate', 0)
-        
-        if stats.get('last_trade'):
-            last_trade_time = stats['last_trade'].timestamp()
-            # Add remaining value to each period where the last trade falls within the period
-            if last_trade_time >= current_time - 86400:  # 24h
-                period_remaining_value['24h'] += remaining_value
-            if last_trade_time >= current_time - 7 * 86400:  # 7d
-                period_remaining_value['7d'] += remaining_value
-            if last_trade_time >= current_time - 30 * 86400:  # 30d
-                period_remaining_value['30d'] += remaining_value
-    
-    for period, stats in period_stats.items():
-        invested = stats.get('invested', 0)
-        if invested > 0:
-            # Include remaining value in profit calculation
-            total_received = stats.get('received', 0) + period_remaining_value.get(period, 0)
-            profit = total_received - invested
-            roi_percent = ((total_received / invested) - 1) * 100
-            profit_color = "green" if profit >= 0 else "red"
-            roi_color = "green" if roi_percent >= 0 else "red"
-            
+
+    for period, data in periods.items():
+        if data['invested'] > 0:
+            profit_color = "green" if data['profit'] >= 0 else "red"
+            roi_color = "green" if data['roi_percent'] >= 0 else "red"
             roi_table.add_row(
                 period.upper(),
-                f"{invested:.3f} ◎",
-                f"{total_received:.3f} ◎",  # Show total including remaining value
-                f"[{profit_color}]{profit:+.3f} ◎[/{profit_color}]",
-                f"[{roi_color}]{roi_percent:+.2f}%[/{roi_color}]"
+                f"{data['invested']:.3f} ◎",
+                f"{data['received']:.3f} ◎",
+                f"[{profit_color}]{data['profit']:+.3f} ◎[/{profit_color}]",
+                f"[{roi_color}]{data['roi_percent']:+.2f}%[/{roi_color}]"
             )
         else:
             roi_table.add_row(
@@ -737,7 +753,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     investments = []  # Track all investments
     hold_times = []  # Track all hold times
     for token, stats in token_stats.items():
-        sol_profit = stats['sol_received'] - stats['sol_invested']
+        sol_profit = stats['sol_received'] - stats['sol_invested'] - stats['total_fees']
         investments.append(stats['sol_invested'])  # Add investment to list
         if sol_profit > 0:
             profits.append(sol_profit)
@@ -870,7 +886,6 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
         keys_table.add_row("mwp", "Median Winnings Percentage")
         keys_table.add_row("mht", "Median Hold Time (in seconds)")
         keys_table.add_row("t", "SOL Swaps Count")
-        keys_table.add_row("fmc", "First Market Cap")
         keys_table.add_row("tps", "Tokens per SOL at investment")
 
         # Create table for operators
@@ -999,6 +1014,13 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
     - ROI statistics dictionary
     - Transaction summary dictionary
     """
+    # Load fee values from environment
+    load_dotenv()
+    BUY_FIXED_FEE = float(os.getenv('BUY_FIXED_FEE', '0.002'))
+    SELL_FIXED_FEE = float(os.getenv('SELL_FIXED_FEE', '0.002'))
+    BUY_PERCENT_FEE = float(os.getenv('BUY_PERCENT_FEE', '0.022912'))
+    SELL_PERCENT_FEE = float(os.getenv('SELL_PERCENT_FEE', '0.063'))
+    
     # Dictionary to track token stats
     token_stats = {}
     period_stats = {
@@ -1063,22 +1085,42 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
                     'name': '',
                     'symbol': '',
                     'hold_time': None,
-                    'trade_count': 0
+                    'trade_count': 0,
+                    'buy_fees': 0,  # Track buy fees
+                    'sell_fees': 0,  # Track sell fees
+                    'total_fees': 0  # Track total fees
                 }
         
         # Update token stats
         if is_sol_token(token1) and not is_sol_token(token2):
+            # Buying tokens with SOL
             token_stats[token2]['sol_invested'] += amount1
             token_stats[token2]['tokens_bought'] += amount2
             token_stats[token2]['last_sol_rate'] = amount1 / (amount2 or 0.0000000001)
             token_stats[token2]['last_trade'] = max(trade_time, token_stats[token2]['last_trade']) if token_stats[token2]['last_trade'] else trade_time
             token_stats[token2]['first_trade'] = min(trade_time, token_stats[token2]['first_trade']) if token_stats[token2]['first_trade'] else trade_time
+            
+            # Calculate and add buy fees
+            fixed_fee = BUY_FIXED_FEE
+            percent_fee = amount1 * BUY_PERCENT_FEE
+            total_fee = fixed_fee + percent_fee
+            token_stats[token2]['buy_fees'] += total_fee
+            token_stats[token2]['total_fees'] += total_fee
+            
         elif is_sol_token(token2) and not is_sol_token(token1):
+            # Selling tokens for SOL
             token_stats[token1]['sol_received'] += amount2
             token_stats[token1]['tokens_sold'] += amount1
             token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)
             token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
             token_stats[token1]['first_trade'] = min(trade_time, token_stats[token1]['first_trade']) if token_stats[token1]['first_trade'] else trade_time
+            
+            # Calculate and add sell fees
+            fixed_fee = SELL_FIXED_FEE
+            percent_fee = amount2 * SELL_PERCENT_FEE
+            total_fee = fixed_fee + percent_fee
+            token_stats[token1]['sell_fees'] += total_fee
+            token_stats[token1]['total_fees'] += total_fee
         
         if token1 and not is_sol_token(token1):
             token_stats[token1]['trade_count'] += 1
@@ -1124,7 +1166,7 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
 
     for token, stats in token_stats.items():
         remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
-        sol_profit = stats['sol_received'] - stats['sol_invested']
+        sol_profit = stats['sol_received'] - stats['sol_invested'] - stats['total_fees']
         
         # Calculate remaining value
         token_price = stats.get('token_price_usdt')
@@ -1133,6 +1175,7 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
         else:
             remaining_value = remaining_tokens * stats.get('last_sol_rate', 0)
         
+        # Calculate profits including fees
         total_token_profit = sol_profit + remaining_value
         
         # Calculate first trade market cap
@@ -1149,7 +1192,7 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
                 stats['hold_time'] = duration
                 hold_times.append(duration)
 
-        # Track profits/losses
+        # Track profits/losses (after fees)
         investments.append(stats['sol_invested'])
         if sol_profit > 0:
             profits.append(sol_profit)
@@ -1164,11 +1207,14 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
             'first_mc': first_trade_mc,
             'sol_invested': stats['sol_invested'],
             'sol_received': stats['sol_received'],
-            'sol_profit': sol_profit,
+            'sol_profit': sol_profit,  # Now includes fees
             'remaining_value': remaining_value,
-            'total_profit': total_token_profit,
+            'total_profit': total_token_profit,  # Now includes fees
             'token_price': stats['token_price_usdt'],
-            'trades': stats['trade_count']
+            'trades': stats['trade_count'],
+            'buy_fees': stats['buy_fees'],
+            'sell_fees': stats['sell_fees'],
+            'total_fees': stats['total_fees']
         }
         token_data_list.append(token_data)
 
@@ -1178,8 +1224,9 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
     # Prepare ROI data
     roi_data = {}
     period_remaining_value = {'24h': 0, '7d': 0, '30d': 0}
+    period_fees = {'24h': 0, '7d': 0, '30d': 0}  # Track fees for each period
     
-    # Calculate remaining value for each period
+    # Calculate remaining value and fees for each period
     for token, stats in token_stats.items():
         remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
         token_price = stats.get('token_price_usdt')
@@ -1191,24 +1238,38 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
         if stats.get('last_trade'):
             last_trade_time = stats['last_trade'].timestamp()
             current_time_ts = current_time.timestamp()
-            if last_trade_time >= current_time_ts - 86400:
+            
+            # Add remaining value and fees to appropriate periods
+            if last_trade_time >= current_time_ts - 86400:  # 24h
                 period_remaining_value['24h'] += remaining_value
-            if last_trade_time >= current_time_ts - 7 * 86400:
+                period_fees['24h'] += stats['total_fees']
+            if last_trade_time >= current_time_ts - 7 * 86400:  # 7d
                 period_remaining_value['7d'] += remaining_value
-            if last_trade_time >= current_time_ts - 30 * 86400:
+                period_fees['7d'] += stats['total_fees']
+            if last_trade_time >= current_time_ts - 30 * 86400:  # 30d
                 period_remaining_value['30d'] += remaining_value
+                period_fees['30d'] += stats['total_fees']
 
     for period, stats in period_stats.items():
         invested = stats.get('invested', 0)
         total_received = stats.get('received', 0) + period_remaining_value.get(period, 0)
-        profit = total_received - invested
-        roi_percent = ((total_received / invested) - 1) * 100 if invested > 0 else None
+        period_total_fees = period_fees.get(period, 0)
+        
+        # Calculate profit after fees
+        profit = total_received - invested - period_total_fees
+        
+        # Calculate ROI percentage after fees
+        if invested > 0:
+            roi_percent = ((total_received - period_total_fees) / invested - 1) * 100
+        else:
+            roi_percent = None
         
         roi_data[period] = {
             'invested': invested,
             'received': total_received,
-            'profit': profit,
-            'roi_percent': roi_percent
+            'profit': profit,  # Now includes fees
+            'roi_percent': roi_percent,  # Now includes fees
+            'fees': period_total_fees
         }
 
     # Prepare transaction summary
