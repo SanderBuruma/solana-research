@@ -11,6 +11,22 @@ import time
 from dotenv import load_dotenv
 import csv
 
+def is_sol_token(token: str) -> bool:
+    """Check if a token is SOL"""
+    SOL_ADDRESSES = {
+        "So11111111111111111111111111111111111111112",
+        "So11111111111111111111111111111111111111111"
+    }
+    return token in SOL_ADDRESSES
+
+def is_usd(token: str) -> bool:
+    """Check if a token is a USD token"""
+    USD_ADDRESSES = {
+        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    }
+    return token in USD_ADDRESSES
+    
 def generate_random_token() -> str:
     """
     Generate a random Solscan authentication token following the same pattern as the JavaScript code.
@@ -175,6 +191,12 @@ class SolscanAPI:
                     if trans_id in cached_trades:
                         found_cached = True
                         break
+
+                    if not is_sol_token(trade.get('amount_info', {}).get('token1')) and not is_sol_token(trade.get('amount_info', {}).get('token2')):
+                        continue
+
+                    if is_usd(trade.get('amount_info', {}).get('token1')) or is_usd(trade.get('amount_info', {}).get('token2')):
+                        continue
 
                     if trans_id not in cached_trades:
                         all_trades.append(trade)
@@ -386,15 +408,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         '7d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 7 * 86400},
         '30d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 30 * 86400}
     }
-    SOL_ADDRESSES = {
-        "So11111111111111111111111111111111111111112",
-        "So11111111111111111111111111111111111111111"
-    }
 
-    def is_sol_token(token: str) -> bool:
-        """Check if a token is SOL"""
-        return token in SOL_ADDRESSES
-    
     # First pass: collect all trades and update period stats
     for trade in trades:
         amount_info = trade.get('amount_info', {})
@@ -1081,14 +1095,7 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
         '7d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 7 * 86400},
         '30d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 30 * 86400}
     }
-    SOL_ADDRESSES = {
-        "So11111111111111111111111111111111111111112",
-        "So11111111111111111111111111111111111111111"
-    }
 
-    def is_sol_token(token: str) -> bool:
-        return token in SOL_ADDRESSES
-    
     # First pass: collect all trades and update period stats
     for trade in trades:
         amount_info = trade.get('amount_info', {})
@@ -1099,8 +1106,11 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
         token2 = amount_info.get('token2')
         token1_decimals = amount_info.get('token1_decimals', 0)
         token2_decimals = amount_info.get('token2_decimals', 0)
-        
+
         if not token1 or not token2:
+            continue
+        
+        if is_usd(token1) or is_usd(token2):
             continue
         
         try:
@@ -1327,8 +1337,11 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
 
     # Prepare transaction summary
     total_defi_txs = len(trades)
-    non_sol_txs = sum(1 for trade in trades if trade.get('amount_info', {}).get('token1') not in SOL_ADDRESSES 
-                      and trade.get('amount_info', {}).get('token2') not in SOL_ADDRESSES)
+    non_sol_txs = len([
+        trade for trade in trades if 
+        not is_sol_token(trade.get('amount_info', {}).get('token1')) 
+        and not is_sol_token(trade.get('amount_info', {}).get('token2'))
+    ])
     
     median_profit = sorted(profits)[len(profits)//2] if profits else 0
     median_loss = sorted(losses)[len(losses)//2] if losses else 0
