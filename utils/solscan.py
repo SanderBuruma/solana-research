@@ -1,17 +1,18 @@
-import requests
 import os
+import time
+import json
+import csv
+import random
+import string
+from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime, timedelta
 
+# Third-party imports
+import requests
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
-
-from typing import Dict, Any, Optional, List, Tuple
-import random
-import string
-import time
 from dotenv import load_dotenv
-import csv
 
 def is_sol_token(token: str) -> bool:
     """Check if a token is SOL"""
@@ -53,6 +54,86 @@ def generate_random_token() -> str:
     result = result.replace(random.choice(result), '-', 2)  # Replace 2 random chars with '-'
     
     return result
+
+class SolscanDefiActivity:
+    """
+    Structured representation of a DEX trading activity from Solscan.
+    
+    This class encapsulates all the relevant information about a DEX trade,
+    providing a cleaner and more type-safe access to trade data compared to
+    using raw dictionaries.
+    
+    Attributes:
+        transaction_id (str): Unique identifier of the transaction
+        block_time (float): UNIX timestamp of the block when the transaction occurred
+        token1 (str): Address of the first token in the swap
+        token2 (str): Address of the second token in the swap
+        token1_decimals (int): Number of decimals for the first token
+        token2_decimals (int): Number of decimals for the second token
+        amount1 (float): Raw amount of the first token (multiply by 10^-decimals to get human-readable amount)
+        amount2 (float): Raw amount of the second token (multiply by 10^-decimals to get human-readable amount)
+        price_usdt (float): Price in USDT at the time of the transaction
+        decimals (int): Decimals of the token (if applicable)
+        name (str): Name of the token (if applicable)
+        symbol (str): Symbol of the token (if applicable)
+        flow (str): Direction of the transaction (in/out)
+        value (float): Value of the transaction (in USD)
+    """
+    def __init__(self, trade: Dict[str, Any]):
+        """
+        Initialize a new SolscanDefiActivity instance from a trade dictionary.
+        
+        Args:
+            trade: Dictionary containing trade data from Solscan API
+        """
+        self.transaction_id = trade.get('trans_id', '')
+        self.block_time = trade.get('block_time', 0)
+        
+        # Extract amount_info data
+        amount_info = trade.get('amount_info', {})
+        self.token1 = amount_info.get('token1', '')
+        self.token2 = amount_info.get('token2', '')
+        self.token1_decimals = amount_info.get('token1_decimals', 0)
+        self.token2_decimals = amount_info.get('token2_decimals', 0)
+        self.amount1 = amount_info.get('amount1', 0)
+        self.amount2 = amount_info.get('amount2', 0)
+        
+        # Add additional fields
+        self.price_usdt = trade.get('price_usdt', 0)
+        self.decimals = trade.get('decimals', 0)
+        self.name = trade.get('name', '')
+        self.symbol = trade.get('symbol', '')
+        self.flow = trade.get('flow', '')
+        self.value = trade.get('value', 0)
+        
+    def get_amount1_human_readable(self) -> float:
+        """Return the human-readable amount of token1"""
+        return float(self.amount1) / (10 ** self.token1_decimals)
+        
+    def get_amount2_human_readable(self) -> float:
+        """Return the human-readable amount of token2"""
+        return float(self.amount2) / (10 ** self.token2_decimals)
+        
+    def is_sol_purchase(self) -> bool:
+        """Check if this trade is buying a token with SOL"""
+        return is_sol_token(self.token1) and not is_sol_token(self.token2)
+        
+    def is_sol_sale(self) -> bool:
+        """Check if this trade is selling a token for SOL"""
+        return is_sol_token(self.token2) and not is_sol_token(self.token1)
+        
+    def get_trade_datetime(self) -> datetime:
+        """Return the datetime of the trade"""
+        return datetime.fromtimestamp(self.block_time)
+        
+    def __str__(self) -> str:
+        """String representation of the trade"""
+        if self.is_sol_purchase():
+            return f"Bought {self.get_amount2_human_readable():.4f} {self.token2} for {self.get_amount1_human_readable():.4f} SOL at {self.get_trade_datetime()}"
+        elif self.is_sol_sale():
+            return f"Sold {self.get_amount1_human_readable():.4f} {self.token1} for {self.get_amount2_human_readable():.4f} SOL at {self.get_trade_datetime()}"
+        else:
+            return f"Swapped {self.get_amount1_human_readable():.4f} {self.token1} for {self.get_amount2_human_readable():.4f} {self.token2} at {self.get_trade_datetime()}"
 
 class SolscanAPI:
     def __init__(self):
@@ -116,10 +197,11 @@ class SolscanAPI:
             return data.get('data', [])
         return None
 
-    def get_dex_trading_history(self, address: str) -> List[Dict[str, Any]]:
+    def get_dex_trading_history(self, address: str) -> List[SolscanDefiActivity]:
         """
         Get complete DEX trading history for an account, up to 1 month old.
         Uses cached transactions from CSV if available and only fetches new transactions.
+        Returns a list of SolscanDefiActivity objects.
         """
         os.makedirs('reports', exist_ok=True)
         csv_filename = f'reports/transactions_{address}.csv'
@@ -132,7 +214,7 @@ class SolscanAPI:
                 reader = csv.DictReader(f)
                 for row in reader:
                     trans_id = row['trans_id']
-                    cached_trades[trans_id] = {
+                    trade_dict = {
                         'block_time': float(row['block_time']),
                         'trans_id': trans_id,
                         'amount_info': {
@@ -142,9 +224,16 @@ class SolscanAPI:
                             'token2_decimals': int(row['token2_decimals']),
                             'amount1': float(row['amount1']),
                             'amount2': float(row['amount2'])
-                        }
+                        },
+                        'price_usdt': 0,  # Default values for required fields
+                        'decimals': 0,
+                        'name': '',
+                        'symbol': '',
+                        'flow': '',
+                        'value': 0
                     }
-                    all_trades.append(cached_trades[trans_id])
+                    cached_trades[trans_id] = trade_dict
+                    all_trades.append(SolscanDefiActivity(trade_dict))
 
         # Get total number of transactions
         endpoint = f'account/activity/dextrading/total?address={address}'
@@ -154,7 +243,8 @@ class SolscanAPI:
             total_trades = 10100
         
         if total_trades == 0:
-            return sorted(all_trades, key=lambda x: x['block_time'])
+            # Sort all trades by block_time
+            return sorted(all_trades, key=lambda x: x.block_time)
 
         page = 1
         page_size = 100
@@ -201,7 +291,21 @@ class SolscanAPI:
                         continue
 
                     if trans_id not in cached_trades:
-                        all_trades.append(trade)
+                        # Add missing fields if they don't exist in the API response
+                        if 'price_usdt' not in trade:
+                            trade['price_usdt'] = 0
+                        if 'decimals' not in trade:
+                            trade['decimals'] = 0
+                        if 'name' not in trade:
+                            trade['name'] = ''
+                        if 'symbol' not in trade:
+                            trade['symbol'] = ''
+                        if 'flow' not in trade:
+                            trade['flow'] = ''
+                        if 'value' not in trade:
+                            trade['value'] = 0
+                            
+                        all_trades.append(SolscanDefiActivity(trade))
                         cached_trades[trans_id] = trade
                         progress.update(task, advance=1)
                 
@@ -213,23 +317,22 @@ class SolscanAPI:
             progress.update(task, completed=len(all_trades))
 
         # Sort all trades by block_time and prioritize token buys when timestamps match
-        all_trades.sort(key=lambda x: (x['block_time'], not is_sol_token(x.get('amount_info', {}).get('token1', ''))))
+        all_trades.sort(key=lambda x: (x.block_time, not is_sol_token(x.token1)))
 
         # Save updated transactions to CSV
         with open(csv_filename, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['trans_id', 'block_time', 'token1', 'token2', 'token1_decimals', 'token2_decimals', 'amount1', 'amount2'])
             for trade in all_trades:
-                amount_info = trade.get('amount_info', {})
                 writer.writerow([
-                    trade.get('trans_id', ''),
-                    trade.get('block_time', ''),
-                    amount_info.get('token1', ''),
-                    amount_info.get('token2', ''),
-                    amount_info.get('token1_decimals', 0),
-                    amount_info.get('token2_decimals', 0),
-                    amount_info.get('amount1', 0),
-                    amount_info.get('amount2', 0)
+                    trade.transaction_id,
+                    trade.block_time,
+                    trade.token1,
+                    trade.token2,
+                    trade.token1_decimals,
+                    trade.token2_decimals,
+                    trade.amount1,
+                    trade.amount2
                 ])
         
         return all_trades
@@ -393,12 +496,12 @@ def get_hold_time_color(first: datetime, last: datetime) -> str:
         return "yellow"
     return "green"
 
-def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, wallet_address: str, filter_str: Optional[str] = None):
+def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Console, wallet_address: str, filter_str: Optional[str] = None):
     """
     Display DEX trading summary grouped by token and save to CSV
     
     Args:
-        trades: List of trades to analyze
+        trades: List of SolscanDefiActivity objects to analyze
         console: Rich console for output
         wallet_address: Address of the wallet being analyzed
         filter_str: Optional filter string to filter token statistics
@@ -413,15 +516,11 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
 
     # First pass: collect all trades and update period stats
     for trade in trades:
-        amount_info = trade.get('amount_info', {})
-        if not amount_info:
-            continue
-            
-        # Extract token information from amount_info
-        token1 = amount_info.get('token1')
-        token2 = amount_info.get('token2')
-        token1_decimals = amount_info.get('token1_decimals', 0)
-        token2_decimals = amount_info.get('token2_decimals', 0)
+        # Extract token information
+        token1 = trade.token1
+        token2 = trade.token2
+        token1_decimals = trade.token1_decimals
+        token2_decimals = trade.token2_decimals
         
         # Ignore vault dex activity
         if not token1 or not token2:
@@ -429,16 +528,16 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         
         # Safely convert amounts to float with null checks
         try:
-            amount1_raw = amount_info.get('amount1')
-            amount2_raw = amount_info.get('amount2')
+            amount1_raw = trade.amount1
+            amount2_raw = trade.amount2
             amount1 = float(amount1_raw if amount1_raw is not None else 0) / (10 ** token1_decimals)
             amount2 = float(amount2_raw if amount2_raw is not None else 0) / (10 ** token2_decimals)
         except (ValueError, TypeError):
             # Skip this trade if amounts are invalid
             continue
         
-        trade_time = datetime.fromtimestamp(trade['block_time'])
-        trade_timestamp = trade['block_time']
+        trade_time = datetime.fromtimestamp(trade.block_time)
+        trade_timestamp = trade.block_time
         
         # Update period stats
         for period, stats in period_stats.items():
@@ -510,7 +609,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             token_stats[token1]['trade_count'] += 1
         if token2 and not is_sol_token(token2):
             token_stats[token2]['trade_count'] += 1
-    
+
     # Fetch current token prices for tokens with remaining balance
     api = SolscanAPI()
     sol_price = api.get_token_price("So11111111111111111111111111111111111111112")
@@ -618,8 +717,8 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
             
             # Calculate number of trades for this token
             token_trades = sum(1 for trade in trades if 
-                trade.get('amount_info', {}).get('token1') == token or 
-                trade.get('amount_info', {}).get('token2') == token)
+                trade.token1 == token or 
+                trade.token2 == token)
             total_trades += token_trades
             
             total_invested += stats['sol_invested']
@@ -751,17 +850,17 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     }
 
     # Calculate period metrics
-    for token in sorted_tokens:
+    for token, stats in token_stats.items():
         for period_name, period_data in periods.items():
             period_start = current_time - period_data['seconds']
-            if token[1]['last_trade'] >= period_start:
-                period_data['invested'] += token[1]['sol_invested']
-                period_data['received'] += token[1]['sol_received']
-                period_data['fees'] += token[1]['total_fees']
+            if stats['last_trade'] >= period_start:
+                period_data['invested'] += stats['sol_invested']
+                period_data['received'] += stats['sol_received']
+                period_data['fees'] += stats['total_fees']
                 # Calculate profit after fees
-                period_profit = token[1]['sol_received'] - token[1]['sol_invested'] - token[1]['total_fees']
-                if token[1]['remaining_value'] > 0:
-                    period_profit += token[1]['remaining_value']
+                period_profit = stats['sol_received'] - stats['sol_invested'] - stats['total_fees']
+                if stats['remaining_value'] > 0:
+                    period_profit += stats['remaining_value']
                 period_data['profit'] += period_profit
 
     # Calculate ROI percentages
@@ -805,7 +904,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
     non_sol_txs = 0
 
     for trade in trades:
-        amount_info = trade.get('amount_info', {})
+        amount_info = trade.amount_info
         if not amount_info:
             continue
             
@@ -1075,9 +1174,15 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
             
     return filtered_stats
 
-def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: Console) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]]:
+def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple[List[Dict[str, Any]], Dict[str, Any], Dict[str, Any]]:
     """
     Analyze trades and return structured data instead of displaying it.
+    
+    Args:
+        trades: List of SolscanDefiActivity objects
+        wallet_address: Address of the wallet being analyzed
+        console: Rich console for output
+        
     Returns a tuple of:
     - List of token dictionaries sorted by last trade time
     - ROI statistics dictionary
@@ -1100,14 +1205,10 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
 
     # First pass: collect all trades and update period stats
     for trade in trades:
-        amount_info = trade.get('amount_info', {})
-        if not amount_info:
-            continue
-            
-        token1 = amount_info.get('token1')
-        token2 = amount_info.get('token2')
-        token1_decimals = amount_info.get('token1_decimals', 0)
-        token2_decimals = amount_info.get('token2_decimals', 0)
+        token1 = trade.token1
+        token2 = trade.token2
+        token1_decimals = trade.token1_decimals
+        token2_decimals = trade.token2_decimals
 
         # If no tokens are involved, skip
         if not token1 or not token2:
@@ -1122,12 +1223,12 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
             continue
 
         # Skip if detecting sell before buy
-        if is_sol_token(token2) and not token1 in token_stats:
+        if is_sol_token(token2) and token1 not in token_stats:
             continue
         
         try:
-            amount1_raw = amount_info.get('amount1')
-            amount2_raw = amount_info.get('amount2')
+            amount1_raw = trade.amount1
+            amount2_raw = trade.amount2
             amount1 = float(amount1_raw if amount1_raw is not None else 0) / (10 ** token1_decimals)
             amount2 = float(amount2_raw if amount2_raw is not None else 0) / (10 ** token2_decimals)
         except (ValueError, TypeError):
@@ -1136,8 +1237,8 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
         if amount2 == 0 or amount1 == 0:
             continue
         
-        trade_time = datetime.fromtimestamp(trade['block_time'])
-        trade_timestamp = trade['block_time']
+        trade_time = datetime.fromtimestamp(trade.block_time)
+        trade_timestamp = trade.block_time
         
         # Initialize token stats if needed
         if not is_sol_token(token2) and token2 not in token_stats:
@@ -1148,7 +1249,7 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
                 'tokens_bought': 0,
                 'tokens_sold': 0,
                 'last_trade': None,
-                'first_trade': datetime.fromtimestamp(trade.get('block_time')),  # Convert to datetime
+                'first_trade': datetime.fromtimestamp(trade.block_time),  # Convert to datetime
                 'last_sol_rate': 0,
                 'token_price_usdt': 0,
                 'decimals': 0,
@@ -1369,11 +1470,8 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
 
     # Prepare transaction summary
     total_defi_txs = len(trades)
-    non_sol_txs = len([
-        trade for trade in trades if 
-        not is_sol_token(trade.get('amount_info', {}).get('token1')) 
-        and not is_sol_token(trade.get('amount_info', {}).get('token2'))
-    ])
+    non_sol_txs = sum(1 for trade in trades if 
+        not is_sol_token(trade.token1) and not is_sol_token(trade.token2))
     
     median_profit = sorted(profits)[len(profits)//2] if profits else 0
     median_loss = sorted(losses)[len(losses)//2] if losses else 0

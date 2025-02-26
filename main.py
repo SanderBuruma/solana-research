@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from rich.table import Table
 import os
 
-from utils.solscan import SolscanAPI, analyze_trades, display_dex_trading_summary, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
+from utils.solscan import SolscanAPI, analyze_trades, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
 
 def is_sol_token(token: str) -> bool:
     """Check if a token address is SOL"""
@@ -188,7 +188,7 @@ def main():
         api.console.print(f"\nFound [green]{len(trades)}[/green] DEX trades\n")
         
         # Use the new analyze_trades function
-        token_data, roi_data, tx_summary = analyze_trades(trades, address, api.console)
+        token_data, roi_data, tx_summary = analyze_trades(trades, api.console)
         
         # Apply filtering if specified
         if filter:
@@ -536,7 +536,7 @@ def main():
                 continue
 
             # Use analyze_trades to get structured data
-            token_data, roi_data, tx_summary = analyze_trades(trades, addr, api.console)
+            token_data, roi_data, tx_summary = analyze_trades(trades, api.console)
 
             # Calculate total fees from token data
             total_fees = sum(token['total_fees'] for token in token_data)
