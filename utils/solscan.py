@@ -1,12 +1,14 @@
 import requests
 import os
 from datetime import datetime, timedelta
+
 from rich.console import Console
 from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+
 from typing import Dict, Any, Optional, List, Tuple
 import random
 import string
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 import time
 from dotenv import load_dotenv
 import csv
@@ -1107,10 +1109,20 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
         token1_decimals = amount_info.get('token1_decimals', 0)
         token2_decimals = amount_info.get('token2_decimals', 0)
 
+        # If no tokens are involved, skip
         if not token1 or not token2:
             continue
         
+        # If USDT or USDC are involved, skip
         if is_usd(token1) or is_usd(token2):
+            continue
+
+        # if no SOL is involved, skip
+        if not is_sol_token(token1) and not is_sol_token(token2):
+            continue
+
+        # Skip if detecting sell before buy
+        if is_sol_token(token2) and not token1 in token_stats:
             continue
         
         try:
@@ -1120,63 +1132,76 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
             amount2 = float(amount2_raw if amount2_raw is not None else 0) / (10 ** token2_decimals)
         except (ValueError, TypeError):
             continue
+
+        if amount2 == 0 or amount1 == 0:
+            continue
         
         trade_time = datetime.fromtimestamp(trade['block_time'])
         trade_timestamp = trade['block_time']
         
-        # Update period stats
-        for period, stats in period_stats.items():
-            if trade_timestamp >= stats['start_time']:
-                if is_sol_token(token1):
-                    stats['invested'] += amount1
-                elif is_sol_token(token2):
-                    stats['received'] += amount2
-        
         # Initialize token stats if needed
-        for token in [token1, token2]:
-            if token and not is_sol_token(token) and token not in token_stats:
-                token_stats[token] = {
-                    'sol_invested': 0,
-                    'sol_received': 0,
-                    'tokens_bought': 0,
-                    'tokens_sold': 0,
-                    'last_trade': None,
-                    'first_trade': None,
-                    'last_sol_rate': 0,
-                    'token_price_usdt': 0,
-                    'decimals': 0,
-                    'name': '',
-                    'symbol': '',
-                    'hold_time': None,
-                    'trade_count': 0,
-                    'buy_fees': 0,  # Track buy fees
-                    'sell_fees': 0,  # Track sell fees
-                    'total_fees': 0  # Track total fees
-                }
-        
+        if not is_sol_token(token2) and token2 not in token_stats:
+            token_stats[token2] = {
+                'sol_invested': 0,
+                'sol_received': 0,
+                'tokens_tally': 0,
+                'tokens_bought': 0,
+                'tokens_sold': 0,
+                'last_trade': None,
+                'first_trade': trade.get('block_time'),
+                'last_sol_rate': 0,
+                'token_price_usdt': 0,
+                'decimals': 0,
+                'name': '',
+                'symbol': '',
+                'hold_time': None,
+                'trade_count': 0,
+                'buy_fees': 0,  # Track buy fees
+                'sell_fees': 0,  # Track sell fees
+                'total_fees': 0  # Track total fees
+            }
+
         # Update token stats
+        if is_sol_token(token1):
+            token_stats[token2]['last_trade'] = trade_time
+        else:
+            token_stats[token1]['last_trade'] = trade_time
+
         if is_sol_token(token1) and not is_sol_token(token2):
             # Buying tokens with SOL
             token_stats[token2]['sol_invested'] += amount1
             token_stats[token2]['tokens_bought'] += amount2
+            token_stats[token2]['tokens_tally'] += amount2_raw
             token_stats[token2]['last_sol_rate'] = amount1 / (amount2 or 0.0000000001)
-            token_stats[token2]['last_trade'] = max(trade_time, token_stats[token2]['last_trade']) if token_stats[token2]['last_trade'] else trade_time
-            token_stats[token2]['first_trade'] = min(trade_time, token_stats[token2]['first_trade']) if token_stats[token2]['first_trade'] else trade_time
-            
+
             # Calculate and add buy fees
             fixed_fee = BUY_FIXED_FEE
             percent_fee = amount1 * BUY_PERCENT_FEE
             total_fee = fixed_fee + percent_fee
             token_stats[token2]['buy_fees'] += total_fee
             token_stats[token2]['total_fees'] += total_fee
+
+            # Period stats
+            for period, stats in period_stats.items():
+                if trade_timestamp >= stats['start_time']:
+                    stats['invested'] += amount1
             
         elif is_sol_token(token2) and not is_sol_token(token1):
             # Selling tokens for SOL
+
+            # If the tally is 0, skip recording the sell
+            if token_stats[token1]['tokens_tally'] == 0:
+                continue
+            # If more tokens are being sold than have already been bought, set the tokens_tally to the amount being sold and adjust amount2 to maintain the proper ratio
+            if token_stats[token1]['tokens_tally'] < amount1_raw:
+                ratio = token_stats[token1]['tokens_tally'] / amount1_raw
+                amount1 = token_stats[token1]['tokens_tally']
+                amount2 = amount2 * ratio
+
+            token_stats[token1]['tokens_tally'] -= amount1_raw
             token_stats[token1]['sol_received'] += amount2
             token_stats[token1]['tokens_sold'] += amount1
             token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)
-            token_stats[token1]['last_trade'] = max(trade_time, token_stats[token1]['last_trade']) if token_stats[token1]['last_trade'] else trade_time
-            token_stats[token1]['first_trade'] = min(trade_time, token_stats[token1]['first_trade']) if token_stats[token1]['first_trade'] else trade_time
             
             # Calculate and add sell fees
             fixed_fee = SELL_FIXED_FEE
@@ -1184,10 +1209,15 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
             total_fee = fixed_fee + percent_fee
             token_stats[token1]['sell_fees'] += total_fee
             token_stats[token1]['total_fees'] += total_fee
+
+            # Period stats
+            for period, stats in period_stats.items():
+                if trade_timestamp >= stats['start_time']:
+                    stats['received'] += amount2
         
-        if token1 and not is_sol_token(token1):
+        if not is_sol_token(token1):
             token_stats[token1]['trade_count'] += 1
-        if token2 and not is_sol_token(token2):
+        else:
             token_stats[token2]['trade_count'] += 1
 
     # Fetch token prices
