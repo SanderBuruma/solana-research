@@ -212,8 +212,8 @@ class SolscanAPI:
             
             progress.update(task, completed=len(all_trades))
 
-        # Sort all trades by block_time
-        all_trades.sort(key=lambda x: x['block_time'])
+        # Sort all trades by block_time and prioritize token buys when timestamps match
+        all_trades.sort(key=lambda x: (x['block_time'], not is_sol_token(x.get('amount_info', {}).get('token1', ''))))
 
         # Save updated transactions to CSV
         with open(csv_filename, 'w', newline='') as f:
@@ -813,7 +813,7 @@ def display_dex_trading_summary(trades: List[Dict[str, Any]], console: Console, 
         token2 = amount_info.get('token2')
         
         # Count if neither token is SOL
-        if token1 and token2 and token1 not in SOL_ADDRESSES and token2 not in SOL_ADDRESSES:
+        if token1 and token2 and not is_sol_token(token1) and not is_sol_token(token2):
             non_sol_txs += 1
 
     # Calculate median profit and loss and holding times
@@ -1148,7 +1148,7 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
                 'tokens_bought': 0,
                 'tokens_sold': 0,
                 'last_trade': None,
-                'first_trade': trade.get('block_time'),
+                'first_trade': datetime.fromtimestamp(trade.get('block_time')),  # Convert to datetime
                 'last_sol_rate': 0,
                 'token_price_usdt': 0,
                 'decimals': 0,
@@ -1259,6 +1259,8 @@ def analyze_trades(trades: List[Dict[str, Any]], wallet_address: str, console: C
 
     for token, stats in token_stats.items():
         remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
+        if remaining_tokens < 1e-6:
+            remaining_tokens = 0
         sol_profit = stats['sol_received'] - stats['sol_invested'] - stats['total_fees']
         
         # Calculate remaining value
