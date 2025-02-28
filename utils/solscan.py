@@ -208,33 +208,6 @@ class SolscanAPI:
         cached_trades = {}
         all_trades = []
 
-        # Load existing transactions from CSV if it exists
-        if os.path.exists(csv_filename):
-            with open(csv_filename, 'r') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    trans_id = row['trans_id']
-                    trade_dict = {
-                        'block_time': float(row['block_time']),
-                        'trans_id': trans_id,
-                        'amount_info': {
-                            'token1': row['token1'],
-                            'token2': row['token2'],
-                            'token1_decimals': int(row['token1_decimals']),
-                            'token2_decimals': int(row['token2_decimals']),
-                            'amount1': float(row['amount1']),
-                            'amount2': float(row['amount2'])
-                        },
-                        'price_usdt': 0,  # Default values for required fields
-                        'decimals': 0,
-                        'name': '',
-                        'symbol': '',
-                        'flow': '',
-                        'value': 0
-                    }
-                    cached_trades[trans_id] = trade_dict
-                    all_trades.append(SolscanDefiActivity(trade_dict))
-
         # Get total number of transactions
         endpoint = f'account/activity/dextrading/total?address={address}'
         total_data = self._make_request(endpoint)
@@ -280,9 +253,6 @@ class SolscanAPI:
                         break
 
                     trans_id = trade.get('trans_id')
-                    if trans_id in cached_trades:
-                        found_cached = True
-                        break
 
                     if not is_sol_token(trade.get('amount_info', {}).get('token1')) and not is_sol_token(trade.get('amount_info', {}).get('token2')):
                         continue
@@ -290,24 +260,22 @@ class SolscanAPI:
                     if is_usd(trade.get('amount_info', {}).get('token1')) or is_usd(trade.get('amount_info', {}).get('token2')):
                         continue
 
-                    if trans_id not in cached_trades:
-                        # Add missing fields if they don't exist in the API response
-                        if 'price_usdt' not in trade:
-                            trade['price_usdt'] = 0
-                        if 'decimals' not in trade:
-                            trade['decimals'] = 0
-                        if 'name' not in trade:
-                            trade['name'] = ''
-                        if 'symbol' not in trade:
-                            trade['symbol'] = ''
-                        if 'flow' not in trade:
-                            trade['flow'] = ''
-                        if 'value' not in trade:
-                            trade['value'] = 0
+                    if 'price_usdt' not in trade:
+                        trade['price_usdt'] = 0
+                    if 'decimals' not in trade:
+                        trade['decimals'] = 0
+                    if 'name' not in trade:
+                        trade['name'] = ''
+                    if 'symbol' not in trade:
+                        trade['symbol'] = ''
+                    if 'flow' not in trade:
+                        trade['flow'] = ''
+                    if 'value' not in trade:
+                        trade['value'] = 0
                             
-                        all_trades.append(SolscanDefiActivity(trade))
-                        cached_trades[trans_id] = trade
-                        progress.update(task, advance=1)
+                    all_trades.append(SolscanDefiActivity(trade))
+                    cached_trades[trans_id] = trade
+                    progress.update(task, advance=1)
                 
                 if len(trades) < page_size:
                     break
@@ -319,22 +287,6 @@ class SolscanAPI:
         # Sort all trades by block_time and prioritize token buys when timestamps match
         all_trades.sort(key=lambda x: (x.block_time, not is_sol_token(x.token1)))
 
-        # Save updated transactions to CSV
-        with open(csv_filename, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['trans_id', 'block_time', 'token1', 'token2', 'token1_decimals', 'token2_decimals', 'amount1', 'amount2'])
-            for trade in all_trades:
-                writer.writerow([
-                    trade.transaction_id,
-                    trade.block_time,
-                    trade.token1,
-                    trade.token2,
-                    trade.token1_decimals,
-                    trade.token2_decimals,
-                    trade.amount1,
-                    trade.amount2
-                ])
-        
         return all_trades
 
     def get_token_price(self, token_address: str) -> Optional[Dict[str, Any]]:
@@ -1055,6 +1007,7 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
         keys_table.add_row("mht", "Median Hold Time (in seconds)")
         keys_table.add_row("t", "SOL Swaps Count")
         keys_table.add_row("tps", "Tokens per SOL at investment")
+        keys_table.add_row("fmc", "First Market Cap")
 
         # Create table for operators
         operators_table = Table(title="[bold cyan]Available Operators", show_header=True, header_style="bold magenta")
@@ -1078,7 +1031,7 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
         examples_table.add_row("-f \"mht:>86400\"", "Filter tokens held more than 24 hours")
         examples_table.add_row("-f \"t:>500;fmc:>25000\"", "Multiple filters combined")
         examples_table.add_row("-f \"tps:>1000000\"", "Filter tokens with >1M tokens per SOL exchange rate at first investment")
-
+        examples_table.add_row("-f \"mwp:>100\"", "Filter tokens with median winnings percentage > 100%")
         # Format text
         format_text = Text("\nFilter Format: ", style="bold white")
         format_text.append("key:operator value", style="cyan")
@@ -1137,6 +1090,8 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
                 actual_value = stats.get('median_profit', 0)
             elif key == 'mlp':
                 actual_value = stats.get('median_loss_roi', 0)
+            elif key == 'fmc':
+                actual_value = stats.get('first_market_cap', 0)
             elif key == 'mwp':
                 actual_value = stats.get('median_profit_roi', 0)
             elif key == 'mht':
