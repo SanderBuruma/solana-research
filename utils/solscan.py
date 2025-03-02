@@ -540,7 +540,27 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
             token_stats[token2]['total_fees'] += total_fee
             
         elif is_sol_token(token2) and not is_sol_token(token1):
-            # Sold tokens for SOL
+            # Sold tokens for SOL - include even if token appears in sell transactions first
+            if token1 not in token_stats:
+                token_stats[token1] = {
+                    'sol_invested': 0,
+                    'sol_received': 0,
+                    'tokens_bought': 0,
+                    'tokens_sold': 0,
+                    'last_trade': None,
+                    'first_trade': trade_time,
+                    'last_sol_rate': 0,
+                    'token_price_usdt': 0,
+                    'decimals': 0,
+                    'name': '',
+                    'symbol': '',
+                    'hold_time': None,
+                    'trade_count': 0,
+                    'buy_fees': 0,
+                    'sell_fees': 0,
+                    'total_fees': 0
+                }
+            
             token_stats[token1]['sol_received'] += amount2
             token_stats[token1]['tokens_sold'] += amount1
             token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)  # SOL per token
@@ -1135,7 +1155,6 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
     
     Args:
         trades: List of SolscanDefiActivity objects
-        wallet_address: Address of the wallet being analyzed
         console: Rich console for output
         
     Returns a tuple of:
@@ -1177,9 +1196,27 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         if not is_sol_token(token1) and not is_sol_token(token2):
             continue
 
-        # Skip if detecting sell before buy
+        # Initialize stats for tokens found in sell transactions
         if is_sol_token(token2) and token1 not in token_stats:
-            continue
+            token_stats[token1] = {
+                'sol_invested': 0,
+                'sol_received': 0,
+                'tokens_tally': 0, # This might go negative, which is now allowed
+                'tokens_bought': 0,
+                'tokens_sold': 0,
+                'last_trade': None,
+                'first_trade': datetime.fromtimestamp(trade.block_time),
+                'last_sol_rate': 0,
+                'token_price_usdt': 0,
+                'decimals': 0,
+                'name': '',
+                'symbol': '',
+                'hold_time': None,
+                'trade_count': 0,
+                'buy_fees': 0,
+                'sell_fees': 0,
+                'total_fees': 0
+            }
         
         try:
             amount1_raw = trade.amount1
@@ -1243,20 +1280,10 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
                     stats['invested'] += amount1
             
         elif is_sol_token(token2) and not is_sol_token(token1):
-            # Selling tokens for SOL
-
-            # If the tally is 0, skip recording the sell
-            if token_stats[token1]['tokens_tally'] == 0:
-                continue
-            # If more tokens are being sold than have already been bought, set the tokens_tally to the amount being sold and adjust amount2 to maintain the proper ratio
-            if token_stats[token1]['tokens_tally'] < amount1_raw:
-                ratio = token_stats[token1]['tokens_tally'] / amount1_raw
-                amount1 = token_stats[token1]['tokens_tally']
-                amount2 = amount2 * ratio
-
-            token_stats[token1]['tokens_tally'] -= amount1_raw
+            # Selling tokens for SOL - now we process all sell transactions
             token_stats[token1]['sol_received'] += amount2
             token_stats[token1]['tokens_sold'] += amount1
+            token_stats[token1]['tokens_tally'] -= amount1_raw
             token_stats[token1]['last_sol_rate'] = amount2 / (amount1 or 0.0000000001)
             
             # Calculate and add sell fees
