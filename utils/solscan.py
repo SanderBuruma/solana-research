@@ -164,16 +164,34 @@ class SolscanAPI:
 
     def _make_request(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """
-        Make a request to the Solscan API
+        Make a request to the Solscan API with retry logic and exponential backoff.
+        
+        Args:
+            endpoint: The API endpoint to request
+            
+        Returns:
+            Optional[Dict[str, Any]]: The API response data or None if the request fails
         """
-        url = f'{self.base_url}/{endpoint}'
-        try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error making request: {e}")
-            return None
+        url = f"{self.base_url}/{endpoint}"
+        max_retries = 200
+        base_wait_time = 60  # Start with 1 minute wait
+        wait_time = base_wait_time
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=self.headers)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    # Calculate wait time with 20% increase
+                    wait_time = int(wait_time * 1.2)
+                    self.console.print(f"\n[yellow]Request failed (attempt {attempt + 1}/{max_retries}): {str(e)}[/yellow]")
+                    self.console.print(f"[yellow]Waiting {wait_time} seconds before retry...[/yellow]")
+                    time.sleep(wait_time)
+                else:
+                    self.console.print(f"\n[red]Failed to fetch data after {max_retries} attempts: {str(e)}[/red]")
+                    return None
 
     def get_account_balance(self, address: str) -> Optional[float]:
         """
