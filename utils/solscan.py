@@ -1353,12 +1353,17 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
     # Calculate hold times and prepare token data
     current_time = datetime.now()
     token_data_list = []
+    # Track investments, profits, losses, and hold times for median calculations
+    investments = []
     profits = []
     losses = []
-    investments = []
     hold_times = []
+    roi_percentages = []  # Add list to track individual token ROI percentages
 
     for token, stats in token_stats.items():
+        if is_sol_token(token):
+            continue
+            
         remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
         if remaining_tokens < 1e-6:
             remaining_tokens = 0
@@ -1374,6 +1379,11 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         # Calculate profits including fees
         total_token_profit = sol_profit + remaining_value
         
+        # Calculate ROI percentage for this token and add to list
+        if stats['sol_invested'] > 0:
+            roi_percent = (total_token_profit / stats['sol_invested']) * 100
+            roi_percentages.append(roi_percent)
+        
         # Calculate first trade market cap
         tokens_bought = stats.get('tokens_bought', 0)
         first_trade_rate = stats['sol_invested'] / tokens_bought if tokens_bought > 0 else 0
@@ -1387,7 +1397,7 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
                 duration = stats['last_trade'] - stats['first_trade']
                 stats['hold_time'] = duration
                 hold_times.append(duration)
-
+        
         # Track profits/losses (after fees)
         investments.append(stats['sol_invested'])
         if sol_profit > 0:
@@ -1400,17 +1410,18 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
             'address': token,
             'hold_time': stats['hold_time'].total_seconds() if stats['hold_time'] else 0,
             'last_trade': stats['last_trade'].timestamp() if stats['last_trade'] else 0,
+            'first_trade': stats['first_trade'].timestamp() if stats['first_trade'] else 0,
             'first_mc': first_trade_mc,
             'sol_invested': stats['sol_invested'],
             'sol_received': stats['sol_received'],
             'sol_profit': sol_profit,  # Now includes fees
+            'buy_fees': stats['buy_fees'],
+            'sell_fees': stats['sell_fees'],
+            'total_fees': stats['total_fees'],
             'remaining_value': remaining_value,
             'total_profit': total_token_profit,  # Now includes fees
             'token_price': stats['token_price_usdt'],
-            'trades': stats['trade_count'],
-            'buy_fees': stats['buy_fees'],
-            'sell_fees': stats['sell_fees'],
-            'total_fees': stats['total_fees']
+            'trades': stats['trade_count']
         }
         token_data_list.append(token_data)
 
@@ -1468,13 +1479,14 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
             'fees': period_total_fees
         }
 
+    # Calculate median ROI % from individual token ROI percentages
+    median_roi_percent = sorted(roi_percentages)[len(roi_percentages)//2] if roi_percentages else 0
+    
     # Prepare transaction summary
     total_defi_txs = len(trades)
     non_sol_txs = sum(1 for trade in trades if 
         not is_sol_token(trade.token1) and not is_sol_token(trade.token2))
     
-    median_profit = sorted(profits)[len(profits)//2] if profits else 0
-    median_loss = sorted(losses)[len(losses)//2] if losses else 0
     median_investment = sorted(investments)[len(investments)//2] if investments else 0
     median_hold_time = sorted(hold_times)[len(hold_times)//2] if hold_times else timedelta()
     
@@ -1488,10 +1500,7 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         'win_rate': win_rate,
         'win_rate_ratio': f"{len(profits)}/{total_tokens}",
         'median_investment': median_investment,
-        'median_profit': median_profit,
-        'median_profit_roi': (median_profit / median_investment * 100) if median_investment > 0 else 0,
-        'median_loss': median_loss,
-        'median_loss_roi': (median_loss / median_investment * 100) if median_investment > 0 else 0,
+        'median_roi_percent': median_roi_percent,  # Add new field for median ROI %
         'median_hold_time': median_hold_time.total_seconds()
     }
 

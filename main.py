@@ -386,18 +386,14 @@ def main():
             f"{tx_summary['median_investment']:.3f} ◎",
             ""
         )
-        if tx_summary['median_profit'] > 0:
-            summary_table.add_row(
-                "Median Profit per Token",
-                f"[green]+{tx_summary['median_profit']:.3f} ◎ (+{tx_summary['median_profit_roi']:.1f}%)[/green]",
-                f"({tx_summary['win_rate_ratio']} tokens)"
-            )
-        if tx_summary['median_loss'] > 0:
-            summary_table.add_row(
-                "Median Loss per Token",
-                f"[red]-{tx_summary['median_loss']:.3f} ◎ (-{tx_summary['median_loss_roi']:.1f}%)[/red]",
-                f"({tx_summary['win_rate_ratio']} tokens)"
-            )
+        
+        # Add the median ROI percentage
+        summary_table.add_row(
+            "Median ROI %",
+            f"[{'green' if tx_summary['median_roi_percent'] >= 0 else 'red'}]{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%[/{'green' if tx_summary['median_roi_percent'] >= 0 else 'red'}]",
+            ""
+        )
+        
 
         median_hold_td = timedelta(seconds=tx_summary['median_hold_time'])
         if median_hold_td.days > 0:
@@ -519,8 +515,7 @@ def main():
         summary_table.add_column("Total Fees", justify="right", style="red")
         summary_table.add_column("Win Rate", justify="right", style="green")
         summary_table.add_column("Med Investment", justify="right", style="green")
-        summary_table.add_column("Med Profit", justify="right", style="green")
-        summary_table.add_column("Med Loss", justify="right", style="red")
+        summary_table.add_column("Med ROI %", justify="right", style="magenta")
         summary_table.add_column("Med Hold Time", justify="right", style="blue")
         summary_table.add_column("nSol Swaps", justify="right", style="green")
         summary_table.add_column("Total Swaps", justify="right", style="green")
@@ -567,8 +562,7 @@ def main():
                 "Win Rate": f"{tx_summary['win_rate']:.1f}",
                 "Profitable/Total": tx_summary['win_rate_ratio'],
                 "Median Investment": f"{tx_summary['median_investment']:.3f}",
-                "Median Profit": f"{tx_summary['median_profit']:.3f} ({tx_summary['median_profit_roi']:.1f}%)" if tx_summary['median_profit'] > 0 else "N/A",
-                "Median Loss": f"{tx_summary['median_loss']:.3f} ({tx_summary['median_loss_roi']:.1f}%)" if tx_summary['median_loss'] > 0 else "N/A",
+                "Median ROI %": f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
                 "Median Hold Time": format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
                 "nSol Swaps": tx_summary['non_sol_swaps'],
                 "Total Swaps": tx_summary['total_transactions']
@@ -594,8 +588,7 @@ def main():
                 f"[red]{total_fees:.3f} ◎[/red]",
                 f"[{win_rate_color}]{tx_summary['win_rate']:.1f}% ({tx_summary['win_rate_ratio']})[/{win_rate_color}]",
                 f"{tx_summary['median_investment']:.3f} ◎",
-                f"+{tx_summary['median_profit']:.3f} ◎ (+{tx_summary['median_profit_roi']:.1f}%)" if tx_summary['median_profit'] > 0 else "N/A",
-                f"-{tx_summary['median_loss']:.3f} ◎ (-{tx_summary['median_loss_roi']:.1f}%)" if tx_summary['median_loss'] > 0 else "N/A",
+                f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
                 format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
                 str(tx_summary['non_sol_swaps']),
                 str(tx_summary['total_transactions'])
