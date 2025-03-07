@@ -8,6 +8,8 @@ import re
 import csv
 import requests
 import json
+from rich.markdown import Markdown
+from rich.panel import Panel
 
 from utils.solscan import SolscanAPI, analyze_trades, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
 
@@ -21,21 +23,21 @@ def is_sol_token(token: str) -> bool:
     
 def print_usage():
     """
-    Print usage information
+    Display the README.md file with nice formatting in the terminal
     """
-    print("\nSolana Research Tool Usage:")
-    print("==========================")
-    print("-1 <address>     Get Account Balance")
-    print("-2 <address>     View Transaction History")
-    print("-3 <address>     View Balance History")
-    print("-5 <address>     View DeFi Summary for Wallets")
-    print("-6              Get Holder Addresses using bullX (must provide auth token from request headers findable through the network console)")
-    print("\nExamples:")
-    print("python main.py -1 <address>")
-    print("python main.py -2 <address>")
-    print("python main.py -3 <address>")
-    print("python main.py -5 <address1> <address2> <address3>")
-    print("==========================")
+    console = Console()
+    
+    # Get the path to README.md relative to the script location
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    readme_path = os.path.join(script_dir, "README.md")
+    
+    # Read the README file
+    with open(readme_path, 'r') as readme_file:
+        readme_content = readme_file.read()
+    
+    # Create a Markdown renderer and display the content
+    markdown = Markdown(readme_content)
+    console.print(Panel(markdown, title="Solana Research Tool - Documentation", border_style="green", expand=False))
 
 def option_1(api, console):       
     if len(sys.argv) != 3:
