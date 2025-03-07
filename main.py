@@ -23,21 +23,68 @@ def is_sol_token(token: str) -> bool:
     
 def print_usage():
     """
-    Display the README.md file with nice formatting in the terminal
+    Display the README.md file with nice formatting in the terminal, but without emoji icons
     """
     console = Console()
     
-    # Get the path to README.md relative to the script location
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    readme_path = os.path.join(script_dir, "README.md")
+    try:
+        # Get the path to README.md relative to the script location
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        readme_path = os.path.join(script_dir, "README.md")
+        
+        # Read the README file
+        with open(readme_path, 'r', encoding='utf-8') as readme_file:
+            readme_content = readme_file.read()
+        
+        # Remove emoji characters using regex
+        # This regex pattern matches common emoji unicode ranges
+        emoji_pattern = re.compile(
+            "["
+            "\U0001F600-\U0001F64F"  # emoticons
+            "\U0001F300-\U0001F5FF"  # symbols & pictographs
+            "\U0001F680-\U0001F6FF"  # transport & map symbols
+            "\U0001F700-\U0001F77F"  # alchemical symbols
+            "\U0001F780-\U0001F7FF"  # Geometric Shapes
+            "\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+            "\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+            "\U0001FA00-\U0001FA6F"  # Chess Symbols
+            "\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+            "\U00002702-\U000027B0"  # Dingbats
+            "\U000024C2-\U0001F251" 
+            "]+"
+        )
+        
+        # Clean the readme content by removing emojis
+        clean_readme = emoji_pattern.sub('', readme_content)
+        
+        # Create a Markdown renderer and display the content
+        markdown = Markdown(clean_readme)
+        console.print(Panel(markdown, title="Solana Research Tool - Documentation", border_style="green", expand=False))
     
-    # Read the README file
-    with open(readme_path, 'r') as readme_file:
-        readme_content = readme_file.read()
+    except FileNotFoundError:
+        # Fallback if README.md not found
+        console.print(Panel("[yellow]README.md file not found. Displaying basic usage information:[/yellow]", border_style="yellow"))
+        console.print("\n[bold]Solana Research Tool Usage:[/bold]")
+        console.print("-1 <address>     Get Account Balance")
+        console.print("-2 <address>     View Transaction History")
+        console.print("-3 <address>     View Balance History")
+        console.print("-5 <address>     View DeFi Summary for Wallets")
+        console.print("-6 <token>       Get Holder Addresses using bullX")
+        console.print("\n[bold]Examples:[/bold]")
+        console.print("python main.py -1 <address>")
+        console.print("python main.py -2 <address>")
+        console.print("python main.py -3 <address>")
+        console.print("python main.py -5 <address1> <address2> <address3>")
     
-    # Create a Markdown renderer and display the content
-    markdown = Markdown(readme_content)
-    console.print(Panel(markdown, title="Solana Research Tool - Documentation", border_style="green", expand=False))
+    except Exception as e:
+        # Handle any other errors gracefully
+        console.print(f"[red]Error displaying README: {str(e)}[/red]")
+        console.print("\n[bold]Solana Research Tool Usage:[/bold]")
+        console.print("-1 <address>     Get Account Balance")
+        console.print("-2 <address>     View Transaction History")
+        console.print("-3 <address>     View Balance History")
+        console.print("-5 <address>     View DeFi Summary for Wallets")
+        console.print("-6 <token>       Get Holder Addresses using bullX")
 
 def option_1(api, console):       
     if len(sys.argv) != 3:

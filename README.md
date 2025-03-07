@@ -1,126 +1,215 @@
 # Solana Research Tool
 
-A Python-based command-line tool for interacting with the Solana blockchain. Features include account balance checking, transaction history viewing, balance history analysis, vanity address generation, and DeFi trading summary analysis.
+A powerful Python-based command-line tool for comprehensive analysis of Solana blockchain data. This tool helps you analyze wallets, track DEX trading activity, monitor token performance, and gather detailed information about Solana tokens and addresses.
 
-## Features
+## 🚀 Features
 
-- **-1 <address>**: Get Account Balance
-  - Input a Solana address to check its current SOL balance (displayed with 9 decimal precision).
+### 🔍 Wallet Analysis
 
-- **-2 <address>**: View Transaction History
-  - Retrieve the last 100 transactions of a Solana address.
-  - Displays timestamp, transaction type, amount in SOL, from/to addresses, and USD value.
+- **-1 <address>**: Get Account Balance and Token Holdings
+  - Displays current SOL balance with 9 decimal precision
+  - Shows all token holdings with USD values
+  - Calculates total portfolio value in SOL and USD
+  - Saves balance data to CSV for historical tracking
 
-- **-3 <address>**: View Balance History
-  - Analyze historical balance fluctuations of a Solana address based on its DEX trading activity.
-  - Shows detailed trading summary including number of trades per token.
-  notes:
-  - Works the best when a wallet only gets transfers in/out of SOL and not other tokens. Remaining tokens can be negative when tokens are received and sold on any wallet.
+- **-2 <address>**: View Detailed Transaction History
+  - Retrieves the last 100 transactions for a Solana address
+  - Displays timestamp, transaction type, amount, and counterparties
+  - Shows USD value of transactions at time of execution
+  - Color-coded for easy identification of transaction types
 
-- **-5 <address> [<address> ...]**: View DeFi Summary for Wallets
-  - Accept one or more wallet addresses and produce a summary table.
-  - Can read addresses from a text file (e.g., `addresses.txt`) or directly from command line.
-  - Automatically extracts Solana addresses from text files using regex pattern.
-  - For each address, the table displays:
-    - 24H ROI %
-    - 7D ROI %
-    - 30D ROI % and absolute 30D ROI (profit/loss in SOL)
-    - Win Rate (% of tokens traded profitably)
-    - Number of non-SOL swaps
-    - Total number of swaps (overall DEX trading activity)
-  - Win Rate is color-coded: green for ≥50%, red for <50%
-  - Saves results to a timestamped CSV file in `reports/` directory (format: YYYYMMDDHHmm-option5.csv)
+- **-3 <address>**: Analyze DEX Trading History
+  - Comprehensive breakdown of all DEX trading activity
+  - Token-by-token profit/loss analysis
+  - Detailed metrics including:
+    - SOL invested and received
+    - Buy/sell fees breakdown
+    - Remaining token value
+    - Total profit/loss calculations
+    - Hold time statistics
+  - Advanced filtering with the `-f` flag (see below)
+  - Period-based ROI analysis (24h, 7d, 30d)
+  - Saves detailed reports to CSV files
 
-- **-6 <token_address>**: Get Holder Addresses
-  - Fetch a list of holder addresses for a specific token using BullX API.
-  - Requires authentication token in `.env` file.
-  - Displays:
-    - List of all holder addresses
-    - Total number of holders found
-  - Saves all addresses to `found_addresses_6.txt` with timestamp and summary
+### 📊 Multi-Wallet Analytics
 
-## Installation
+- **-5 <address> [<address> ...]**: Comparative DeFi Summary
+  - Analyze multiple wallets simultaneously
+  - Read addresses from command line or text file
+  - Auto-extracts Solana addresses from text using regex
+  - Comparative metrics across wallets including:
+    - ROI percentages (24h, 7d, 30d)
+    - Win rates and median statistics
+    - Fee analysis and efficiency metrics
+    - Trade volume and activity levels
+  - Color-coded performance indicators
+  - Exports comprehensive CSV report
 
-1. Clone the repository:
-```bash
-git clone [your-repo-url]
-cd solana-research
-```
+### 🔎 Token Holder Analysis
 
-2. Create and activate a virtual environment:
-```bash
-python -m venv venv
-.\venv\Scripts\activate  # Windows
-```
+- **-6 <token_address>**: Token Holder Analytics
+  - Fetch detailed holder statistics for any Solana token
+  - Categorized holder breakdown by wallet size
+  - Analysis of token distribution and concentration
+  - Whale monitoring and distribution metrics
+  - Saves holder data to CSV with timestamp
 
-3. Install required packages:
-```bash
-pip install -r requirements.txt
-```
+## 🛠️ Installation
 
-4. Set up environment variables:
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/yourusername/solana-research.git
+   cd solana-research
+   ```
+
+2. **Create and activate a virtual environment:**
+   ```bash
+   # Windows
+   python -m venv venv
+   .\venv\Scripts\activate
+
+   # macOS/Linux
+   python -m venv venv
+   source venv/bin/activate
+   ```
+
+3. **Install required packages:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Set up environment variables:**
    - Create a `.env` file in the project root
-   - Add solscan token to `.env` file:
+   - Copy the content from `.env.example` to your `.env` file
+   - Add your SolScan authorization token:
      ```
      SOLSCAN_SOL_AUT=your_token_here
      ```
-   - Add your BullX authentication token:
+   - Add your BullX authentication token for option -6:
      ```
      BULLX_AUTH_TOKEN=your_token_here
      ```
+   - Customize fee settings if needed:
+     ```
+     BUY_FIXED_FEE=0.002
+     SELL_FIXED_FEE=0.002
+     BUY_PERCENT_FEE=0.022912
+     SELL_PERCENT_FEE=0.063
+     ```
 
-## Usage
+## 📋 Usage Examples
 
-Run the program:
+### Account Balance (-1)
+
+Basic usage:
 ```bash
-.\venv\Scripts\python.exe main.py
+python main.py -1 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
 ```
 
-### Example Commands
+### Transaction History (-2)
 
-- Check account balance:
+Basic usage:
 ```bash
-.\venv\Scripts\python.exe main.py -1 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
+python main.py -2 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
 ```
 
-- View transaction history:
+### DEX Trading Analysis (-3)
+
+Basic usage:
 ```bash
-.\venv\Scripts\python.exe main.py -2 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
+python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
 ```
 
-- View balance history:
+With filtering:
 ```bash
-.\venv\Scripts\python.exe main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
+# Show only tokens with more than 10 trades and positive ROI
+python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY -f "t:>10;30droip:>0"
+
+# Show tokens with market cap > $50,000
+python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY -f "fmc:>50000"
+
+# Show tokens with median hold time > 1 day (86400 seconds)
+python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY -f "mht:>86400"
+
+# Multiple complex filters
+python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY -f "t:>5;mht:>3600;30droip:>15"
 ```
 
-- Generate vanity address:
+Display help for filtering options:
 ```bash
-.\venv\Scripts\python.exe main.py -4 "^Sol"
+python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY -f ""
 ```
 
-- View DeFi summary for multiple wallets:
+### Multi-Wallet Analysis (-5)
+
+Analysis for multiple addresses:
 ```bash
-.\venv\Scripts\python.exe main.py -5 walletAddr1 walletAddr2 walletAddr3
-# Or using a text file containing addresses:
-.\venv\Scripts\python.exe main.py -5 addresses.txt
+python main.py -5 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY D2VUDgoMuRUhjizAM2jaQyrmHPeTmuCXwkKKnLvCBT32
 ```
 
-- Get holder addresses for a token:
+Analysis from a text file with addresses:
 ```bash
-.\venv\Scripts\python.exe main.py -6 7LyN1qLLAVZWLcm6XscRve6SrnmbU5YtdA6axv6Rpump
+python main.py -5 addresses.txt
 ```
 
-## Performance
+### Token Holder Analysis (-6)
 
-The tool leverages advanced optimizations including multi-core processing, JIT compilation using Numba, and batch processing to improve performance, especially in the vanity address generator and DeFi summary calculation.
+Basic usage:
+```bash
+python main.py -6 7LyN1qLLAVZWLcm6XscRve6SrnmbU5YtdA6axv6Rpump
+```
 
-## Security
+## 🔍 Available Filters for Option -3
 
-- Private keys are securely generated using Ed25519 cryptography and are saved locally in `found_addresses.txt`.
-- No sensitive data is transmitted externally. Keep your private keys secure.
-- API tokens are stored in `.env` file and not committed to version control.
+When using the `-3` option, you can filter tokens using the `-f` flag followed by filter criteria:
 
-## Contributing
+| Key     | Description                | Example                    |
+|---------|----------------------------|----------------------------|
+| 30droip | 30 Day ROI Percentage      | `-f "30droip:>50"`         |
+| wr      | Win Rate                   | `-f "wr:>75"`              |
+| mi      | Median Investment          | `-f "mi:<0.1"`             |
+| ml      | Median Loss                | `-f "ml:<0.05"`            |
+| mw      | Median Winnings            | `-f "mw:>0.1"`             |
+| mlp     | Median Loss Percentage     | `-f "mlp:<25"`             |
+| mwp     | Median Winnings Percentage | `-f "mwp:>100"`            |
+| mht     | Median Hold Time (seconds) | `-f "mht:>86400"`          |
+| t       | SOL Swaps Count            | `-f "t:>10"`               |
+| tps     | Tokens per SOL (at invest) | `-f "tps:>1000000"`        |
+| fmc     | First Market Cap           | `-f "fmc:>50000"`          |
+| MC      | Market Cap                 | `-f "MC:>50000"`           |
 
-Feel free to submit issues and enhancement requests! 
-Donate Solana or any other tokens to me at D2VUDgoMuRUhjizAM2jaQyrmHPeTmuCXwkKKnLvCBT32 if you appreciate my work
+You can combine multiple filters using semicolons:
+```bash
+python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY -f "t:>5;30droip:>0;mht:>3600"
+```
+
+This would show only tokens with:
+- More than 5 trades
+- Positive 30-day ROI
+- Held for more than an hour (3600 seconds)
+
+## 📊 CSV Reports
+
+The tool automatically generates CSV reports in the `reports/` directory:
+
+- **Option -1**: Balance snapshot with token holdings
+- **Option -3**: Detailed DEX trading history by token
+- **Option -5**: Multi-wallet comparison with performance metrics
+- **Option -6**: Token holder distribution data
+
+## 🔒 Security Notes
+
+- API tokens are stored in the `.env` file and not committed to version control
+- No sensitive data is transmitted outside necessary API calls
+- All reports are stored locally in the `reports/` directory
+
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to submit issues and enhancement requests.
+
+If you find this tool useful, consider donating Solana or other tokens to:
+`yWtV6SeVJkhM4vLAQsP8rBoWf6B8TZ9QvNAdApcubit`
+
+## 📜 License
+
+This project is released under the MIT License.
