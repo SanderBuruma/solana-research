@@ -31,6 +31,15 @@ A powerful Python-based command-line tool for comprehensive analysis of Solana b
   - Period-based ROI analysis (24h, 7d, 30d)
   - Saves detailed reports to CSV files
 
+- **-4 <address>**: Detect Copy Traders
+  - Identifies wallets that may be copy trading the target wallet
+  - Analyzes the first 10 token buys from the target wallet
+  - Detects other wallets that bought the same tokens within 30 seconds
+  - Tracks copy frequency, token diversity, and timing patterns
+  - Generates a ranked list of potential copy traders
+  - Provides statistical insights on copying behavior
+  - Exports findings to a timestamped CSV report
+
 ### 📊 Multi-Wallet Analytics
 
 - **-5 <address> [<address> ...]**: Comparative DeFi Summary
@@ -139,6 +148,34 @@ Display help for filtering options:
 ```bash
 python main.py -3 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY -f ""
 ```
+
+### Copy Trader Detection (-4)
+
+Basic usage:
+```bash
+python main.py -4 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
+```
+
+Example output:
+```
+Potential Copy Traders of AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
+┌────────────────────────────────────┬───────────┬──────────────┬──────────────────┐
+│ Wallet Address                      │ Copy Count │ Tokens       │ Avg Time Delay (s) │
+├────────────────────────────────────┼───────────┼──────────────┼──────────────────┤
+│ 5K3XU2uxuH962Ru2kZ3WXzgsMFZDTy7FHXZMQgowVqEA │ 7         │ 5 unique tokens │ 12.45              │
+│ D4SuNZhPPArHpoH1LzrBTYgm3r3eSf3WWDoJJAGrdmXv │ 4         │ 4 unique tokens │ 6.32               │
+│ 8FE27ioQh5H4HpUts2MauL1xmzUtEWnPzH9iXptVrYZZ │ 3         │ 3 unique tokens │ 18.91              │
+└────────────────────────────────────┴───────────┴──────────────┴──────────────────┘
+
+Results saved to reports/copy_traders_AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY_202406151220.csv
+```
+
+This command will:
+- Analyze the target wallet's first 10 token buys
+- Find other wallets that bought the same tokens within 30 seconds
+- Display wallets that copied more than once
+- Show the number of tokens copied and average time delay
+- Save results to a CSV file for further analysis
 
 ### Multi-Wallet Analysis (-5)
 

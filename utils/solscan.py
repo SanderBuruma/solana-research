@@ -97,6 +97,7 @@ class SolscanDefiActivity:
         self.token2_decimals = amount_info.get('token2_decimals', 0)
         self.amount1 = amount_info.get('amount1', 0)
         self.amount2 = amount_info.get('amount2', 0)
+        self.from_address = trade.get('from_address', '')
         
         # Add additional fields
         self.price_usdt = trade.get('price_usdt', 0)

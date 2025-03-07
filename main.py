@@ -68,14 +68,10 @@ def print_usage():
         console.print("-1 <address>     Get Account Balance")
         console.print("-2 <address>     View Transaction History")
         console.print("-3 <address>     View Balance History")
+        console.print("-4 <address>     Detect Copy Traders")
         console.print("-5 <address>     View DeFi Summary for Wallets")
         console.print("-6 <token>       Get Holder Addresses using bullX")
-        console.print("\n[bold]Examples:[/bold]")
-        console.print("python main.py -1 <address>")
-        console.print("python main.py -2 <address>")
-        console.print("python main.py -3 <address>")
-        console.print("python main.py -5 <address1> <address2> <address3>")
-    
+
     except Exception as e:
         # Handle any other errors gracefully
         console.print(f"[red]Error displaying README: {str(e)}[/red]")
@@ -83,8 +79,15 @@ def print_usage():
         console.print("-1 <address>     Get Account Balance")
         console.print("-2 <address>     View Transaction History")
         console.print("-3 <address>     View Balance History")
+        console.print("-4 <address>     Detect Copy Traders")
         console.print("-5 <address>     View DeFi Summary for Wallets")
         console.print("-6 <token>       Get Holder Addresses using bullX")
+        console.print("\n[bold]Examples:[/bold]")
+        console.print("python main.py -1 <address>")
+        console.print("python main.py -2 <address>")
+        console.print("python main.py -3 <address>")
+        console.print("python main.py -4 <address>")
+        console.print("python main.py -5 <address1> <address2> <address3>")
 
 def option_1(api, console):       
     if len(sys.argv) != 3:
@@ -711,6 +714,133 @@ def option_6(api, console):
         console.print(f"[red]Error fetching data: {str(e)}[/red]")
         sys.exit(1)
 
+def option_4(api, console):
+    """
+    Detect wallets that might be copy trading the target wallet
+    
+    Steps:
+    1. Get the first 10 token buys for the target wallet
+    2. For each token, get all trades and find wallets that bought within 30 seconds after the target
+    3. Track wallets that show up multiple times (suggesting copy trading)
+    4. Display summary of potential copy traders
+    """
+    if len(sys.argv) != 3:
+        print("Error: Wallet address required for copy trader detection")
+        print_usage()
+        sys.exit(1)
+    
+    target_wallet = sys.argv[2]
+    
+    # Create a table to display results
+    copy_traders_table = Table(title=f"Potential Copy Traders of {target_wallet}")
+    copy_traders_table.add_column("Wallet Address", style="cyan")
+    copy_traders_table.add_column("Copy Count", justify="right", style="yellow")
+    copy_traders_table.add_column("Tokens", style="green")
+    copy_traders_table.add_column("Avg Time Delay (s)", justify="right", style="magenta")
+    
+    # Dictionary to track potential copy traders
+    copy_traders = {}  # Structure: {wallet_address: {'count': int, 'tokens': set, 'delays': list}}
+    
+    console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
+    trades = api.get_dex_trading_history(target_wallet)
+    
+    if not trades:
+        console.print("[red]No DEX trading history found for this wallet[/red]")
+        return
+    
+    console.print(f"Found [green]{len(trades)}[/green] DEX trades")
+    
+    # Get first buys for unique tokens (where target wallet bought a token using SOL)
+    first_buys = {}  # {token_address: trade_data}
+    for trade in trades:
+        # Check if this is a buy (SOL -> token)
+        if is_sol_token(trade.token1) and not is_sol_token(trade.token2):
+            token = trade.token2
+            if token not in first_buys:
+                first_buys[token] = trade
+                
+                # Stop once we have 10 tokens
+                if len(first_buys) >= 10:
+                    break
+    
+    console.print(f"Analyzing first buys for [green]{len(first_buys)}[/green] unique tokens")
+    
+    # Track progress
+    with console.status("[bold green]Scanning for copy traders...[/bold green]", spinner="dots") as status:
+        # For each token, find wallets that bought within 30 seconds after the target
+        for token, target_trade in first_buys.items():
+            token_name = token[:5] + "..." + token[-5:]
+            target_time = target_trade.block_time
+            
+            status.update(f"[bold green]Scanning transactions for token {token_name}...[/bold green]")
+            
+            # Get all trades for this token
+            token_trades = api.get_dex_trading_history(token)
+            
+            # Find trades within 30 seconds after the target's trade
+            for trade in token_trades:
+                # Skip if it's not a buy (SOL -> token)
+                if not is_sol_token(trade.token1) or is_sol_token(trade.token2):
+                    continue
+                    
+                # Skip if it's the target wallet
+                if trade.from_address == target_wallet:
+                    continue
+                
+                # Check if the trade occurred within 30 seconds after the target's trade
+                time_diff = trade.block_time - target_time
+                if 0 < time_diff <= 30:
+                    # Record this as a potential copy trade
+                    if trade.from_address not in copy_traders:
+                        copy_traders[trade.from_address] = {'count': 0, 'tokens': set(), 'delays': []}
+                    
+                    copy_traders[trade.from_address]['count'] += 1
+                    copy_traders[trade.from_address]['tokens'].add(token)
+                    copy_traders[trade.from_address]['delays'].append(time_diff)
+    
+    # Filter out wallets that only copied once
+    copy_traders = {k: v for k, v in copy_traders.items() if v['count'] > 1}
+    
+    if not copy_traders:
+        console.print("[yellow]No potential copy traders found[/yellow]")
+        return
+    
+    # Sort by copy count (descending)
+    sorted_copy_traders = sorted(copy_traders.items(), key=lambda x: x[1]['count'], reverse=True)
+    
+    # Add rows to the table
+    for wallet, data in sorted_copy_traders:
+        avg_delay = sum(data['delays']) / len(data['delays'])
+        tokens_str = f"{len(data['tokens'])} unique tokens"
+        
+        copy_traders_table.add_row(
+            wallet,
+            str(data['count']),
+            tokens_str,
+            f"{avg_delay:.2f}"
+        )
+    
+    console.print(copy_traders_table)
+    
+    # Save results to CSV
+    os.makedirs('reports', exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d%H%M')
+    csv_filename = f'reports/copy_traders_{target_wallet}_{timestamp}.csv'
+    
+    with open(csv_filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Wallet Address', 'Copy Count', 'Unique Tokens', 'Average Delay (s)'])
+        
+        for wallet, data in sorted_copy_traders:
+            avg_delay = sum(data['delays']) / len(data['delays'])
+            writer.writerow([
+                wallet,
+                data['count'],
+                len(data['tokens']),
+                f"{avg_delay:.2f}"
+            ])
+    
+    console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
 
 def main():
     if len(sys.argv) < 2:
@@ -726,17 +856,16 @@ def main():
 
     if option == "-1":
         option_1(api, console)
-
     elif option == "-2":
         option_2(api, console)
     elif option == "-3":
         option_3(api, console)
-
+    elif option == "-4":
+        option_4(api, console)
     elif option == "-5":
         option_5(api, console)
     elif option == "-6":
         option_6(api, console)
-
     else:
         print(f"Error: Unknown option {option}")
         print_usage()
