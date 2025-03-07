@@ -40,6 +40,15 @@ A powerful Python-based command-line tool for comprehensive analysis of Solana b
   - Provides statistical insights on copying behavior
   - Exports findings to a timestamped CSV report
 
+- **-7 <address>**: Find Copy Trading Sources
+  - Reverse of option -4: identifies wallets that the target wallet may be copying
+  - Analyzes the first 10 token buys from the target wallet
+  - Detects wallets that bought the same tokens within 30 seconds BEFORE the target
+  - Identifies potential trading signal sources for the target wallet
+  - Tracks frequency, token diversity, and timing patterns
+  - Quantifies the target wallet's copy trading behavior
+  - Exports findings to a timestamped CSV report
+
 ### 📊 Multi-Wallet Analytics
 
 - **-5 <address> [<address> ...]**: Comparative DeFi Summary
@@ -177,6 +186,34 @@ This command will:
 - Show the number of tokens copied and average time delay
 - Save results to a CSV file for further analysis
 
+### Find Copy Trading Sources (-7)
+
+Basic usage:
+```bash
+python main.py -7 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
+```
+
+Example output:
+```
+Wallets AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY Potentially Copy Trades From
+┌────────────────────────────────────┬───────────┬──────────────┬──────────────────┐
+│ Wallet Address                      │ Copy Count │ Tokens       │ Avg Time Delay (s) │
+├────────────────────────────────────┼───────────┼──────────────┼──────────────────┤
+│ Gq7GW5ffnP3NSLdz3UG3nbuRVMm6kAe9KNcbA2QWBoPt │ 5         │ 4 unique tokens │ 7.83               │
+│ 3Jbm9PYPaZ7JR9zQkxiKvFZYLjmk6MTRTNzY5cDUWE9V │ 3         │ 3 unique tokens │ 12.21              │
+│ F4cHwzFsXS2mEpD9pv8R4QHGDxBq89ogx2Wt4pcnDczB │ 2         │ 2 unique tokens │ 23.15              │
+└────────────────────────────────────┴───────────┴──────────────┴──────────────────┘
+
+Results saved to reports/copy_sources_AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY_202406151345.csv
+```
+
+This command will:
+- Analyze the target wallet's first 10 token buys
+- Find wallets that bought the same tokens shortly before the target wallet
+- Display wallets that were copied more than once
+- Show the number of tokens copied and average time delay
+- Save results to a CSV file for further analysis
+
 ### Multi-Wallet Analysis (-5)
 
 Analysis for multiple addresses:
@@ -231,8 +268,10 @@ The tool automatically generates CSV reports in the `reports/` directory:
 
 - **Option -1**: Balance snapshot with token holdings
 - **Option -3**: Detailed DEX trading history by token
+- **Option -4**: Wallets potentially copy trading the target wallet
 - **Option -5**: Multi-wallet comparison with performance metrics
 - **Option -6**: Token holder distribution data
+- **Option -7**: Wallets the target wallet potentially copy trades from
 
 ## 🔒 Security Notes
 
