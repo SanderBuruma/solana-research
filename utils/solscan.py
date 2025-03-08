@@ -216,11 +216,20 @@ class SolscanAPI:
             return data.get('data', [])
         return None
 
-    def get_dex_trading_history(self, address: str) -> List[SolscanDefiActivity]:
+    def get_dex_trading_history(self, address: str, time_filter: dict = None) -> List[SolscanDefiActivity]:
         """
         Get complete DEX trading history for an account, up to 1 month old.
         Uses cached transactions from CSV if available and only fetches new transactions.
-        Returns a list of SolscanDefiActivity objects.
+        
+        Args:
+            address: The address to get trading history for
+            time_filter: Optional time filtering parameters:
+                - 'reference_time': base timestamp to compare against
+                - 'direction': 'before' or 'after' to fetch trades before or after the reference time
+                - 'window': maximum time difference in seconds (default 30)
+        
+        Returns:
+            List[SolscanDefiActivity]: List of trading activities
         """
         os.makedirs('reports', exist_ok=True)
         csv_filename = f'reports/transactions_{address}.csv'
@@ -243,6 +252,16 @@ class SolscanAPI:
         one_month_ago = datetime.now().timestamp() - (30 * 86400)  # 30 days in seconds
         found_cached = False
         
+        # Unpack time filter parameters if provided
+        reference_time = None
+        time_direction = None
+        time_window = 30  # Default 30 seconds
+        
+        if time_filter:
+            reference_time = time_filter.get('reference_time')
+            time_direction = time_filter.get('direction')
+            time_window = time_filter.get('window', 30)
+        
         # Create progress bar
         with Progress(
             SpinnerColumn(),
@@ -252,7 +271,7 @@ class SolscanAPI:
             console=self.console,
             transient=True
         ) as progress:
-            task = progress.add_task(f"[yellow]Fetching new DEX trades...", total=total_trades)
+            task = progress.add_task(f"[yellow]Fetching DEX trades...", total=total_trades)
             
             while page < 101 and not found_cached:
                 endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP&activity_type[]=ACTIVITY_AGG_TOKEN_SWAP'
@@ -265,8 +284,26 @@ class SolscanAPI:
                 if not trades:
                     break
                 
+                # Track if we've exceeded the time window for time-filtered queries
+                exceeded_time_window = False
+                
                 # Check each trade
                 for trade in trades:
+                    # Check if this trade is outside our time window (for -4 and -7 optimization)
+                    if reference_time is not None and time_direction is not None:
+                        time_diff = trade['block_time'] - reference_time
+                        
+                        if time_direction == 'before' and time_diff > 0:
+                            # For option -7, we're looking for trades before the reference time
+                            # If we find a trade after the reference time, we've gone too far
+                            exceeded_time_window = True
+                            break
+                        elif time_direction == 'after' and time_diff < -time_window:
+                            # For option -4, we're looking for trades after the reference time
+                            # If we find a trade more than window seconds before, we've gone too far
+                            # (continue looking as newer transactions might be within window)
+                            continue
+                            
                     if trade['block_time'] < one_month_ago:
                         found_cached = True
                         break
@@ -295,6 +332,10 @@ class SolscanAPI:
                     all_trades.append(SolscanDefiActivity(trade))
                     cached_trades[trans_id] = trade
                     progress.update(task, advance=1)
+                
+                # Break early if we've exceeded the time window
+                if exceeded_time_window:
+                    break
                 
                 if len(trades) < page_size:
                     break

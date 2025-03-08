@@ -731,6 +731,7 @@ def option_4(api, console):
     Steps:
     1. Get the first 10 token buys for the target wallet
     2. For each token, get all trades and find wallets that bought within 30 seconds after the target
+       (uses optimized time-filtered search to reduce API calls)
     3. Track wallets that show up multiple times (suggesting copy trading)
     4. Display summary of potential copy traders
     """
@@ -784,8 +785,13 @@ def option_4(api, console):
             
             status.update(f"[bold green]Scanning transactions for token {token_name}...[/bold green]")
             
-            # Get all trades for this token
-            token_trades = api.get_dex_trading_history(token)
+            # Get all trades for this token with time filtering (only trades after target's trade)
+            time_filter = {
+                'reference_time': target_time,
+                'direction': 'after',
+                'window': 30
+            }
+            token_trades = api.get_dex_trading_history(token, time_filter)
             
             # Find trades within 30 seconds after the target's trade
             for trade in token_trades:
@@ -859,6 +865,7 @@ def option_7(api, console):
     Steps:
     1. Get the first 10 token buys for the target wallet
     2. For each token, get all trades and find wallets that bought within 30 seconds BEFORE the target
+       (uses optimized time-filtered search to reduce API calls)
     3. Track wallets that show up multiple times (suggesting the target is copy trading them)
     4. Display summary of potential trading signals
     """
@@ -912,8 +919,13 @@ def option_7(api, console):
             
             status.update(f"[bold green]Scanning transactions for token {token_name}...[/bold green]")
             
-            # Get all trades for this token
-            token_trades = api.get_dex_trading_history(token)
+            # Get all trades for this token with time filtering (only trades before target's trade)
+            time_filter = {
+                'reference_time': target_time,
+                'direction': 'before',
+                'window': 30
+            }
+            token_trades = api.get_dex_trading_history(token, time_filter)
             
             # Find trades within 30 seconds BEFORE the target's trade
             for trade in token_trades:
