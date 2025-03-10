@@ -753,7 +753,7 @@ def option_4(api, console):
     copy_traders = {}  # Structure: {wallet_address: {'count': int, 'tokens': set, 'delays': list}}
     
     console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
-    trades = api.get_dex_trading_history(target_wallet)
+    trades = api.get_dex_trading_history(target_wallet, quiet=True)
     
     if not trades:
         console.print("[red]No DEX trading history found for this wallet[/red]")
@@ -791,7 +791,7 @@ def option_4(api, console):
                 'direction': 'after',
                 'window': 30
             }
-            token_trades = api.get_dex_trading_history(token, time_filter)
+            token_trades = api.get_dex_trading_history(token, time_filter, quiet=True)
             
             # Find trades within 30 seconds after the target's trade
             for trade in token_trades:
@@ -887,7 +887,7 @@ def option_7(api, console):
     copy_sources = {}  # Structure: {wallet_address: {'count': int, 'tokens': set, 'delays': list}}
     
     console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
-    trades = api.get_dex_trading_history(target_wallet)
+    trades = api.get_dex_trading_history(target_wallet, quiet=True)
     
     if not trades:
         console.print("[red]No DEX trading history found for this wallet[/red]")
@@ -925,7 +925,7 @@ def option_7(api, console):
                 'direction': 'before',
                 'window': 30
             }
-            token_trades = api.get_dex_trading_history(token, time_filter)
+            token_trades = api.get_dex_trading_history(token, time_filter, quiet=True)
             
             # Find trades within 30 seconds BEFORE the target's trade
             for trade in token_trades:

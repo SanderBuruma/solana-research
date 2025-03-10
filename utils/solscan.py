@@ -216,7 +216,7 @@ class SolscanAPI:
             return data.get('data', [])
         return None
 
-    def get_dex_trading_history(self, address: str, time_filter: dict = None) -> List[SolscanDefiActivity]:
+    def get_dex_trading_history(self, address: str, time_filter: dict = None, quiet: bool = False) -> List[SolscanDefiActivity]:
         """
         Get complete DEX trading history for an account, up to 1 month old.
         Uses cached transactions from CSV if available and only fetches new transactions.
@@ -227,6 +227,7 @@ class SolscanAPI:
                 - 'reference_time': base timestamp to compare against
                 - 'direction': 'before' or 'after' to fetch trades before or after the reference time
                 - 'window': maximum time difference in seconds (default 30)
+            quiet: If True, suppresses progress bar display (useful when called from other functions with their own status displays)
         
         Returns:
             List[SolscanDefiActivity]: List of trading activities
@@ -262,17 +263,63 @@ class SolscanAPI:
             time_direction = time_filter.get('direction')
             time_window = time_filter.get('window', 30)
         
-        # Create progress bar
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=self.console,
-            transient=True
-        ) as progress:
-            task = progress.add_task(f"[yellow]Fetching DEX trades...", total=total_trades)
+        # Function to process data from a page of trades
+        def process_page_data(trades_data):
+            nonlocal found_cached, all_trades, cached_trades
             
+            # Track if we've exceeded the time window for time-filtered queries
+            exceeded_time_window = False
+            
+            # Check each trade
+            for trade in trades_data:
+                # Check if this trade is outside our time window (for -4 and -7 optimization)
+                if reference_time is not None and time_direction is not None:
+                    time_diff = trade['block_time'] - reference_time
+                    
+                    if time_direction == 'before' and time_diff > 0:
+                        # For option -7, we're looking for trades before the reference time
+                        # If we find a trade after the reference time, we've gone too far
+                        exceeded_time_window = True
+                        break
+                    elif time_direction == 'after' and time_diff < -time_window:
+                        # For option -4, we're looking for trades after the reference time
+                        # If we find a trade more than window seconds before, we've gone too far
+                        # (continue looking as newer transactions might be within window)
+                        continue
+                        
+                if trade['block_time'] < one_month_ago:
+                    found_cached = True
+                    break
+
+                trans_id = trade.get('trans_id')
+
+                if not is_sol_token(trade.get('amount_info', {}).get('token1')) and not is_sol_token(trade.get('amount_info', {}).get('token2')):
+                    continue
+
+                if is_usd(trade.get('amount_info', {}).get('token1')) or is_usd(trade.get('amount_info', {}).get('token2')):
+                    continue
+
+                if 'price_usdt' not in trade:
+                    trade['price_usdt'] = 0
+                if 'decimals' not in trade:
+                    trade['decimals'] = 0
+                if 'name' not in trade:
+                    trade['name'] = ''
+                if 'symbol' not in trade:
+                    trade['symbol'] = ''
+                if 'flow' not in trade:
+                    trade['flow'] = ''
+                if 'value' not in trade:
+                    trade['value'] = 0
+                        
+                all_trades.append(SolscanDefiActivity(trade))
+                cached_trades[trans_id] = trade
+                
+            return exceeded_time_window
+        
+        # Use different approaches based on quiet mode
+        if quiet:
+            # Process without progress bar
             while page < 101 and not found_cached:
                 endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP&activity_type[]=ACTIVITY_AGG_TOKEN_SWAP'
                 data = self._make_request(endpoint)
@@ -284,54 +331,7 @@ class SolscanAPI:
                 if not trades:
                     break
                 
-                # Track if we've exceeded the time window for time-filtered queries
-                exceeded_time_window = False
-                
-                # Check each trade
-                for trade in trades:
-                    # Check if this trade is outside our time window (for -4 and -7 optimization)
-                    if reference_time is not None and time_direction is not None:
-                        time_diff = trade['block_time'] - reference_time
-                        
-                        if time_direction == 'before' and time_diff > 0:
-                            # For option -7, we're looking for trades before the reference time
-                            # If we find a trade after the reference time, we've gone too far
-                            exceeded_time_window = True
-                            break
-                        elif time_direction == 'after' and time_diff < -time_window:
-                            # For option -4, we're looking for trades after the reference time
-                            # If we find a trade more than window seconds before, we've gone too far
-                            # (continue looking as newer transactions might be within window)
-                            continue
-                            
-                    if trade['block_time'] < one_month_ago:
-                        found_cached = True
-                        break
-
-                    trans_id = trade.get('trans_id')
-
-                    if not is_sol_token(trade.get('amount_info', {}).get('token1')) and not is_sol_token(trade.get('amount_info', {}).get('token2')):
-                        continue
-
-                    if is_usd(trade.get('amount_info', {}).get('token1')) or is_usd(trade.get('amount_info', {}).get('token2')):
-                        continue
-
-                    if 'price_usdt' not in trade:
-                        trade['price_usdt'] = 0
-                    if 'decimals' not in trade:
-                        trade['decimals'] = 0
-                    if 'name' not in trade:
-                        trade['name'] = ''
-                    if 'symbol' not in trade:
-                        trade['symbol'] = ''
-                    if 'flow' not in trade:
-                        trade['flow'] = ''
-                    if 'value' not in trade:
-                        trade['value'] = 0
-                            
-                    all_trades.append(SolscanDefiActivity(trade))
-                    cached_trades[trans_id] = trade
-                    progress.update(task, advance=1)
+                exceeded_time_window = process_page_data(trades)
                 
                 # Break early if we've exceeded the time window
                 if exceeded_time_window:
@@ -341,8 +341,44 @@ class SolscanAPI:
                     break
                     
                 page += 1
-            
-            progress.update(task, completed=len(all_trades))
+        else:
+            # Use progress bar
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=self.console,
+                transient=True
+            ) as progress:
+                task = progress.add_task(f"[yellow]Fetching DEX trades...", total=total_trades)
+                
+                while page < 101 and not found_cached:
+                    endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP&activity_type[]=ACTIVITY_AGG_TOKEN_SWAP'
+                    data = self._make_request(endpoint)
+                    
+                    if not data or not data.get('success') or not data.get('data'):
+                        break
+                        
+                    trades = data['data']
+                    if not trades:
+                        break
+                    
+                    exceeded_time_window = process_page_data(trades)
+                    
+                    # Update progress
+                    progress.update(task, advance=len(trades))
+                    
+                    # Break early if we've exceeded the time window
+                    if exceeded_time_window:
+                        break
+                    
+                    if len(trades) < page_size:
+                        break
+                        
+                    page += 1
+                
+                progress.update(task, completed=len(all_trades))
 
         # Sort all trades by block_time and prioritize token buys when timestamps match
         all_trades.sort(key=lambda x: (x.block_time, not is_sol_token(x.token1)))
