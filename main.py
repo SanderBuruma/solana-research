@@ -21,6 +21,28 @@ def is_sol_token(token: str) -> bool:
     }
     return token in SOL_ADDRESSES
     
+
+def format_mc(mc):
+    """Format a market cap value with appropriate suffix and return the formatted string."""
+    if mc >= 1_000_000_000:
+        return f"{mc/1_000_000_000:.1f}B"
+    elif mc >= 1_000_000:
+        return f"{mc/1_000_000:.1f}M"
+    elif mc >= 1_000:
+        return f"{mc/1_000:.1f}K"
+    else:
+        return f"{mc:.1f}"
+
+def format_seconds(seconds):
+    """Format seconds into a human-readable string (days, hours, minutes)."""
+    seconds_td = timedelta(seconds=seconds)
+    if seconds_td.days > 0:
+        return f"{seconds_td.days}d {seconds_td.seconds//3600}h {(seconds_td.seconds%3600)//60}m"
+    elif seconds_td.seconds//3600 > 0:
+        return f"{seconds_td.seconds//3600}h {(seconds_td.seconds%3600)//60}m"
+    else:
+        return f"{(seconds_td.seconds%3600)//60}m"
+
 def print_usage():
     """
     Display the README.md file with nice formatting in the terminal, but without emoji icons
@@ -188,6 +210,7 @@ def option_1(api, console):
             console.print(token_table)
     else:
         console.print("[yellow]No token account data found.[/yellow]")
+
 def option_2(api, console):
     if len(sys.argv) != 3:
         print("Error: Address required for transaction history")
@@ -252,6 +275,9 @@ def option_3(api, console):
                 'hold_time': timedelta(seconds=token['hold_time']),
                 'sol_invested': token['sol_invested'],
                 'tokens_bought': 0,  # This will be fixed in analyze_trades
+                'market_cap': token['first_mc'],  # Add market cap for filtering
+                'median_market_entry': tx_summary['median_market_entry'],  # Add median market entry
+                'median_mc_percentage': tx_summary['median_mc_percentage']  # Add median % of market cap at entry
             }
         
         # Show the filter being applied
@@ -278,8 +304,6 @@ def option_3(api, console):
     table.add_column("SOL Received", justify="right", style="green")
     table.add_column("SOL Profit", justify="right", style="green")
     table.add_column("Buy Fees", justify="right", style="red")
-    table.add_column("Sell Fees", justify="right", style="red")
-    table.add_column("Total Fees", justify="right", style="red")
     table.add_column("Remaining", justify="right", style="yellow")
     table.add_column("Total Profit", justify="right", style="green")
     table.add_column("Token Price", justify="right", style="magenta")
@@ -293,7 +317,7 @@ def option_3(api, console):
     total_trades = 0
     total_buy_fees = 0
     total_sell_fees = 0
-    total_fees = 0
+    total_fees = sum(token['total_fees'] for token in token_data)
 
     for token in token_data:
         # Format hold time
@@ -337,21 +361,18 @@ def option_3(api, console):
         total_trades += token['trades']
         total_buy_fees += token['buy_fees']
         total_sell_fees += token['sell_fees']
-        total_fees += token['total_fees']
         
         table.add_row(
             format_token_address(token['address']),
             hold_time,
             datetime.fromtimestamp(token['last_trade']).strftime('%Y-%m-%d %H:%M'),
             f"[{mc_color}]{mc_value}[/{mc_color}]",
-            f"{token['sol_invested']:.3f} ◎",
-            f"{token['sol_received']:.3f} ◎",
-            f"[{profit_color}]{token['sol_profit']:+.3f} ◎[/{profit_color}]",  # Already includes fees
-            f"{token['buy_fees']:.3f} ◎",
-            f"{token['sell_fees']:.3f} ◎",
-            f"{token['total_fees']:.3f} ◎",
-            f"{token['remaining_value']:.3f} ◎",
-            f"[{total_profit_color}]{token['total_profit']:+.3f} ◎[/{total_profit_color}]",  # Already includes fees
+            f"{token['sol_invested']:.3f} SOL",
+            f"{token['sol_received']:.3f} SOL",
+            f"[{profit_color}]{token['sol_profit']:+.3f} SOL[/{profit_color}]",  # Already includes fees
+            f"{token['total_fees']:.3f} SOL",
+            f"{token['remaining_value']:.3f} SOL",
+            f"[{total_profit_color}]{token['total_profit']:+.3f} SOL[/{total_profit_color}]",  # Already includes fees
             f"${token['token_price']:.6f}" if token['token_price'] > 0 else "N/A",
             str(token['trades'])
         )
@@ -367,8 +388,6 @@ def option_3(api, console):
         f"[bold]{total_invested:.3f} ◎[/bold]",
         f"[bold]{total_received:.3f} ◎[/bold]",
         f"[bold][{profit_style}]{total_profit:+.3f} ◎[/{profit_style}][/bold]",  # Already includes fees
-        f"[bold]{total_buy_fees:.3f} ◎[/bold]",
-        f"[bold]{total_sell_fees:.3f} ◎[/bold]",
         f"[bold]{total_fees:.3f} ◎[/bold]",
         f"[bold]{total_remaining:.3f} ◎[/bold]",
         f"[bold][{total_profit_style}]{(total_profit + total_remaining):+.3f} ◎[/{total_profit_style}][/bold]",  # Already includes fees
@@ -379,114 +398,66 @@ def option_3(api, console):
 
     console.print(table)
 
-    # Display ROI table
-    roi_table = Table(title="\nReturn on Investment (ROI)", show_header=True, header_style="bold")
-    roi_table.add_column("Period", style="cyan")
+    # Display period-based ROI in a table
+    roi_table = Table(title="Return on Investment (ROI)")
+    roi_table.add_column("Period", style="yellow")
     roi_table.add_column("SOL Invested", justify="right", style="green")
-    roi_table.add_column("SOL Received", justify="right", style="red")
-    roi_table.add_column("Profit/Loss", justify="right", style="yellow")
+    roi_table.add_column("SOL Received", justify="right", style="green")
+    roi_table.add_column("Profit/Loss", justify="right", style="green")
     roi_table.add_column("ROI %", justify="right", style="magenta")
 
     for period in ['24h', '7d', '30d']:
         period_data = roi_data[period]
         profit_color = "green" if period_data['profit'] >= 0 else "red"
-        roi_color = "green" if period_data['roi_percent'] and period_data['roi_percent'] >= 0 else "red"
-        
+        roi_color = "green" if period_data['roi_percent'] >= 0 else "red"
         roi_table.add_row(
             period.upper(),
-            f"{period_data['invested']:.3f} ◎",
-            f"{period_data['received']:.3f} ◎",
-            f"[{profit_color}]{period_data['profit']:+.3f} ◎[/{profit_color}]",
-            f"[{roi_color}]{period_data['roi_percent']:+.2f}%[/{roi_color}]" if period_data['roi_percent'] is not None else "N/A"
+            f"{period_data['invested']:.3f} SOL",
+            f"{period_data['received']:.3f} SOL",
+            f"[{profit_color}]{'+' if period_data['profit'] >= 0 else ''}{period_data['profit']:.3f} SOL[/{profit_color}]",
+            f"[{roi_color}]{'+' if period_data['roi_percent'] >= 0 else ''}{period_data['roi_percent']:.2f}%[/{roi_color}]"
         )
 
+    console.print()
     console.print(roi_table)
 
-    # Display transaction summary table
-    summary_table = Table(title="\nTransaction Summary", show_header=True, header_style="bold")
-    summary_table.add_column("Transaction Type", style="cyan")
-    summary_table.add_column("Count", justify="right", style="yellow")
-    summary_table.add_column("Percentage", justify="right", style="green")
+    # Display Transaction Summary
+    transactions_table = Table(title="Transaction Summary")
+    transactions_table.add_column("Transaction Type", style="yellow")
+    transactions_table.add_column("Count", justify="right", style="green")
+    transactions_table.add_column("Percentage", justify="right", style="blue")
 
-    summary_table.add_row(
-        "Total DeFi Transactions",
-        str(tx_summary['total_transactions']),
-        "100%"
-    )
-    summary_table.add_row(
-        "Non-SOL Token Swaps",
-        str(tx_summary['non_sol_swaps']),
-        f"{(tx_summary['non_sol_swaps']/tx_summary['total_transactions']*100):.1f}%" if tx_summary['total_transactions'] > 0 else "0%"
-    )
-    summary_table.add_row(
-        "SOL-Involved Swaps",
-        str(tx_summary['sol_swaps']),
-        f"{(tx_summary['sol_swaps']/tx_summary['total_transactions']*100):.1f}%" if tx_summary['total_transactions'] > 0 else "0%"
-    )
+    # Calculate percentages
+    non_sol_percentage = (tx_summary['non_sol_swaps'] / tx_summary['total_transactions']) * 100 if tx_summary['total_transactions'] > 0 else 0
+    sol_percentage = (tx_summary['sol_swaps'] / tx_summary['total_transactions']) * 100 if tx_summary['total_transactions'] > 0 else 0
+    buy_fee_percentage = (total_buy_fees / total_invested) * 100 if total_invested > 0 else 0
+    sell_fee_percentage = (total_sell_fees / total_received) * 100 if total_received > 0 else 0
+    total_fee_percentage = (total_fees / (total_invested + total_received)) * 100 if (total_invested + total_received) > 0 else 0
 
-    # Add section for profit/loss statistics
-    summary_table.add_section()
-    win_rate_color = "green" if tx_summary['win_rate'] >= 50 else "red"
-    win_rate = tx_summary['win_rate']
-    summary_table.add_row(
-        "Win Rate",
-        f"[{win_rate_color}]{win_rate:.1f}%[/{win_rate_color}]",
-        f"({tx_summary['win_rate_ratio']} tokens)"
-    )
-    summary_table.add_row(
-        "Median Investment per Token",
-        f"{tx_summary['median_investment']:.3f} ◎",
-        ""
-    )
+    # Add rows to the table
+    transactions_table.add_row("Total DeFi Transactions", f"{tx_summary['total_transactions']:,}", "100%")
+    transactions_table.add_row("Non-SOL Token Swaps", f"{tx_summary['non_sol_swaps']:,}", f"{non_sol_percentage:.1f}%")
+    transactions_table.add_row("SOL-Involved Swaps", f"{tx_summary['sol_swaps']:,}", f"{sol_percentage:.1f}%")
+    transactions_table.add_row("", "", "")
+    transactions_table.add_row("Win Rate", f"{tx_summary['win_rate']:.1f}%", f"({tx_summary['win_rate_ratio']} tokens)")
+    transactions_table.add_row("Median Investment per Token", f"{tx_summary['median_investment']:.3f} ◎", "")
+    transactions_table.add_row("Median ROI %", f"{tx_summary['median_roi_percent']:.1f}%", "")
+    transactions_table.add_row("Median Hold Time", f"{format_seconds(tx_summary['median_hold_time'])}", "")
+    transactions_table.add_row("Median Market Entry", f"{format_mc(tx_summary['median_market_entry'])}", "")
+    transactions_table.add_row("Median % of Market Cap at Entry", f"{tx_summary['median_mc_percentage']:.4f}%", "")
+    transactions_table.add_row("", "", "")
+    transactions_table.add_row("Total Buy Fees", f"{total_buy_fees:.3f} SOL", f"({buy_fee_percentage:.1f}% of invested)")
+    transactions_table.add_row("Total Sell Fees", f"{total_sell_fees:.3f} SOL", f"({sell_fee_percentage:.1f}% of received)")
+    transactions_table.add_row("Total Fees", f"{total_fees:.3f} ◎", f"({total_fee_percentage:.1f}% of volume)")
+
+    console.print()
+    console.print(transactions_table)
     
-    # Add the median ROI percentage
-    summary_table.add_row(
-        "Median ROI %",
-        f"[{'green' if tx_summary['median_roi_percent'] >= 0 else 'red'}]{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%[/{'green' if tx_summary['median_roi_percent'] >= 0 else 'red'}]",
-        ""
-    )
-    
-
-    median_hold_td = timedelta(seconds=tx_summary['median_hold_time'])
-    if median_hold_td.days > 0:
-        median_hold = f"{median_hold_td.days}d {median_hold_td.seconds//3600}h {(median_hold_td.seconds%3600)//60}m"
-    elif median_hold_td.seconds//3600 > 0:
-        median_hold = f"{median_hold_td.seconds//3600}h {(median_hold_td.seconds%3600)//60}m"
-    else:
-        median_hold = f"{(median_hold_td.seconds%3600)//60}m"
-
-    summary_table.add_row(
-        "Median Hold Time",
-        median_hold,
-        f"({tx_summary['win_rate_ratio']} tokens)"
-    )
-
-    # Add fee information
-    summary_table.add_section()
-    summary_table.add_row(
-        "Total Buy Fees",
-        f"[red]{total_buy_fees:.3f} ◎[/red]",
-        f"({(total_buy_fees/total_invested*100):.1f}% of invested)" if total_invested > 0 else "N/A"
-    )
-    summary_table.add_row(
-        "Total Sell Fees",
-        f"[red]{total_sell_fees:.3f} ◎[/red]",
-        f"({(total_sell_fees/total_received*100):.1f}% of received)" if total_received > 0 else "N/A"
-    )
-    summary_table.add_row(
-        "Total Fees",
-        f"[red]{total_fees:.3f} ◎[/red]",
-        f"({(total_fees/(total_invested+total_received)*100):.1f}% of volume)" if (total_invested+total_received) > 0 else "N/A"
-    )
-
-    console.print("\n[bold]Transaction Summary[/bold]")
-    console.print(summary_table)
+    # Define csv_filename before using it
+    os.makedirs('reports', exist_ok=True)
+    csv_filename = f'reports/{address}.csv'
 
     # Save to CSV
-    os.makedirs('reports', exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d%H%M')
-    csv_filename = f'reports/{address}.csv'
-    
     with open(csv_filename, 'w') as f:
         f.write("Token,First Trade,Hold Time,Last Trade,First MC,SOL Invested,SOL Received,SOL Profit (after fees),Buy Fees,Sell Fees,Total Fees,Remaining Value,Total Profit (after fees),Token Price (USDT),Trades\n")
         for token in token_data:
@@ -568,8 +539,8 @@ def option_5(api, console):
     summary_table.add_column("Med Investment", justify="right", style="green")
     summary_table.add_column("Med ROI %", justify="right", style="magenta")
     summary_table.add_column("Med Hold Time", justify="right", style="blue")
-    summary_table.add_column("nSol Swaps", justify="right", style="green")
-    summary_table.add_column("Total Swaps", justify="right", style="green")
+    summary_table.add_column("Med Market Entry", justify="right", style="yellow")
+    summary_table.add_column("Med MC %", justify="right", style="cyan")
     
     total_wallets = len(addresses)
     for idx, addr in enumerate(addresses, 1):
@@ -615,8 +586,12 @@ def option_5(api, console):
             "Median Investment": f"{tx_summary['median_investment']:.3f}",
             "Median ROI %": f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
             "Median Hold Time": format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
-            "nSol Swaps": tx_summary['non_sol_swaps'],
-            "Total Swaps": tx_summary['total_transactions']
+            "win_rate": tx_summary['win_rate'],
+            "med_investment": tx_summary['median_investment'],
+            "med_roi": tx_summary['median_roi_percent'],
+            "med_hold_time": tx_summary['median_hold_time'],
+            "med_market_entry": tx_summary['median_market_entry'],
+            "med_mc_percentage": tx_summary['median_mc_percentage']
         })
         
         # Color coding for display
@@ -641,8 +616,8 @@ def option_5(api, console):
             f"{tx_summary['median_investment']:.3f} ◎",
             f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
             format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
-            str(tx_summary['non_sol_swaps']),
-            str(tx_summary['total_transactions'])
+            format_mc(tx_summary['median_market_entry']),
+            f"{tx_summary['median_mc_percentage']:.4f}%",
         )
     
     # Print the table

@@ -6,6 +6,7 @@ import random
 import string
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime, timedelta
+import re
 
 # Third-party imports
 import requests
@@ -1018,22 +1019,22 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
 
     # Display transaction summary
     summary_table = Table(show_header=True, header_style="bold")
-    summary_table.add_column("Transaction Type", style="cyan")
+    summary_table.add_column("Transaction Type")
     summary_table.add_column("Count", justify="right", style="yellow")
     summary_table.add_column("Percentage", justify="right", style="green")
 
     summary_table.add_row(
-        "Total DeFi Transactions",
+        "[gold]Total DeFi Transactions[/gold]",
         str(total_defi_txs),
         "100%"
     )
     summary_table.add_row(
-        "Non-SOL Token Swaps",
+        "[gold]Non-SOL Token Swaps[/gold]",
         str(non_sol_txs),
         f"{(non_sol_txs/total_defi_txs*100):.1f}%" if total_defi_txs > 0 else "0%"
     )
     summary_table.add_row(
-        "SOL-Involved Swaps",
+        "[gold]SOL-Involved Swaps[/gold]",
         str(total_defi_txs - non_sol_txs),
         f"{((total_defi_txs-non_sol_txs)/total_defi_txs*100):.1f}%" if total_defi_txs > 0 else "0%"
     )
@@ -1041,24 +1042,24 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
     # Add section for profit/loss statistics
     summary_table.add_section()
     summary_table.add_row(
-        "Win Rate",
+        "[gold]Win Rate[/gold]",
         f"[{win_rate_color}]{win_rate:.1f}%[/{win_rate_color}]",
         f"({len(profits)}/{total_tokens} tokens)"
     )
     summary_table.add_row(
-        "Median Investment per Token",
+        "[gold]Median Investment per Token[/gold]",
         f"{median_investment:.3f} ◎",
         ""
     )
     if profits:
         summary_table.add_row(
-            "Median Profit per Token",
+            "[gold]Median Profit per Token[/gold]",
             f"[green]+{median_profit:.3f} ◎ (+{median_profit_roi:.1f}%)[/green]",
             f"({len(profits)} tokens)"
         )
     if losses:
         summary_table.add_row(
-            "Median Loss per Token",
+            "[gold]Median Loss per Token[/gold]",
             f"[red]-{median_loss:.3f} ◎ (-{median_loss_roi:.1f}%)[/red]",
             f"({len(losses)} tokens)"
         )
@@ -1124,6 +1125,9 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
         keys_table.add_row("t", "SOL Swaps Count")
         keys_table.add_row("tps", "Tokens per SOL at investment")
         keys_table.add_row("fmc", "First Market Cap")
+        keys_table.add_row("MC", "Market Cap")
+        keys_table.add_row("mme", "Median Market Entry")
+        keys_table.add_row("mmcp", "Median % of Market Cap at Entry")
 
         # Create table for operators
         operators_table = Table(title="[bold cyan]Available Operators", show_header=True, header_style="bold magenta")
@@ -1143,11 +1147,14 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
         
         examples_table.add_row("-f \"t:>500\"", "Filter tokens with more than 500 swaps")
         examples_table.add_row("-f \"fmc:>=25000\"", "Filter tokens with first market cap >= 25000")
+        examples_table.add_row("-f \"MC:>50000\"", "Filter tokens with market cap > 50000")
         examples_table.add_row("-f \"wr:>50\"", "Filter tokens with win rate > 50%")
         examples_table.add_row("-f \"mht:>86400\"", "Filter tokens held more than 24 hours")
         examples_table.add_row("-f \"t:>500;fmc:>25000\"", "Multiple filters combined")
         examples_table.add_row("-f \"tps:>1000000\"", "Filter tokens with >1M tokens per SOL exchange rate at first investment")
         examples_table.add_row("-f \"mwp:>100\"", "Filter tokens with median winnings percentage > 100%")
+        examples_table.add_row("-f \"mme:>1000000\"", "Filter tokens with median market entry > 1M")
+        examples_table.add_row("-f \"mmcp:<1\"", "Filter tokens with median % of market cap at entry < 1%")
         # Format text
         format_text = Text("\nFilter Format: ", style="bold white")
         format_text.append("key:operator value", style="cyan")
@@ -1220,6 +1227,12 @@ def filter_token_stats(token_stats: Dict[str, Dict[str, Any]], filter_str: Optio
                 tokens_bought = stats.get('tokens_bought', 0)
                 first_trade_rate = stats['sol_invested'] / tokens_bought if tokens_bought > 0 else 0
                 actual_value = 1/first_trade_rate if first_trade_rate > 0 else 0
+            elif key == 'MC':
+                actual_value = stats.get('market_cap', 0)
+            elif key == 'mme':
+                actual_value = stats.get('median_market_entry', 0)
+            elif key == 'mmcp':
+                actual_value = stats.get('median_market_cap_percentage', 0)
             
             if actual_value is None:
                 include_token = False
@@ -1437,6 +1450,8 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
     losses = []
     hold_times = []
     roi_percentages = []  # Add list to track individual token ROI percentages
+    market_entries = []   # Track market cap at entry for median calculation
+    mc_investment_percentages = []  # Track % of market cap invested at entry
 
     for token, stats in token_stats.items():
         if is_sol_token(token):
@@ -1466,6 +1481,16 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         tokens_bought = stats.get('tokens_bought', 0)
         first_trade_rate = stats['sol_invested'] / tokens_bought if tokens_bought > 0 else 0
         first_trade_mc = first_trade_rate * sol_price_usdt * 1_000_000_000
+        
+        # Track market cap at entry
+        if first_trade_mc > 0:
+            market_entries.append(first_trade_mc)
+            
+            # Calculate % of market cap invested
+            if sol_price_usdt > 0:
+                sol_value_usd = stats['sol_invested'] * sol_price_usdt
+                mc_percentage = (sol_value_usd / first_trade_mc) * 100
+                mc_investment_percentages.append(mc_percentage)
 
         # Calculate hold time
         if stats['first_trade']:
@@ -1568,6 +1593,10 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
     median_investment = sorted(investments)[len(investments)//2] if investments else 0
     median_hold_time = sorted(hold_times)[len(hold_times)//2] if hold_times else timedelta()
     
+    # Calculate median market entry and median % of market cap at entry
+    median_market_entry = sorted(market_entries)[len(market_entries)//2] if market_entries else 0
+    median_mc_percentage = sorted(mc_investment_percentages)[len(mc_investment_percentages)//2] if mc_investment_percentages else 0
+    
     total_tokens = len(profits) + len(losses)
     win_rate = (len(profits) / total_tokens * 100) if total_tokens > 0 else 0
     
@@ -1579,7 +1608,9 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         'win_rate_ratio': f"{len(profits)}/{total_tokens}",
         'median_investment': median_investment,
         'median_roi_percent': median_roi_percent,  # Add new field for median ROI %
-        'median_hold_time': median_hold_time.total_seconds()
+        'median_hold_time': median_hold_time.total_seconds(),
+        'median_market_entry': median_market_entry,
+        'median_mc_percentage': median_mc_percentage
     }
 
     return token_data_list, roi_data, tx_summary
