@@ -626,9 +626,9 @@ def option_5(api, console):
         roi_30d = roi_data['30d']['roi_percent']  # Already includes fees
         
         # Color ROIs based on profit/loss (after fees)
-        roi_24h_color = "green" if roi_24h and roi_24h > 0 else "red" if roi_24h and roi_24h < 0 else "white"
-        roi_7d_color = "green" if roi_7d and roi_7d > 0 else "red" if roi_7d and roi_7d < 0 else "white"
-        roi_30d_color = "green" if roi_30d and roi_30d > 0 else "red" if roi_30d and roi_30d < 0 else "white"
+        roi_24h_color = "green" if roi_24h and roi_24h > 0 else "red"
+        roi_7d_color = "green" if roi_7d and roi_7d > 0 else "red"
+        roi_30d_color = "green" if roi_30d and roi_30d > 0 else "red"
         
         summary_table.add_row(
             addr,
@@ -1109,6 +1109,138 @@ def option_8(api, console):
     console.print(f"Most active day: [green]{most_active_day}[/green] with [green]{sum(activity_grid[most_active_day_idx])}[/green] transactions")
     console.print(f"Most active hour: [green]{most_active_hour_formatted}[/green] with [green]{max(hour_totals)}[/green] transactions")
     
+    # Analyze timezone based on inactivity patterns
+    console.print("\n[bold]Timezone Analysis:[/bold]")
+    
+    # Create a normalized inactivity score (where 1 = completely inactive, 0 = most active)
+    max_hour_activity = max(hour_totals) if max(hour_totals) > 0 else 1
+    inactivity_scores = [1 - (count / max_hour_activity) for count in hour_totals]
+    
+    # Define common timezone offsets with regions
+    timezones = {
+        "UTC-12 to UTC-11 (Baker Island, Samoa)": {"offset": -12, "probability": 0, "explanation": ""},
+        "UTC-10 (Hawaii)": {"offset": -10, "probability": 0, "explanation": ""},
+        "UTC-9 (Alaska)": {"offset": -9, "probability": 0, "explanation": ""},
+        "UTC-8 (Pacific US)": {"offset": -8, "probability": 0, "explanation": ""},
+        "UTC-7 (Mountain US)": {"offset": -7, "probability": 0, "explanation": ""},
+        "UTC-6 (Central US)": {"offset": -6, "probability": 0, "explanation": ""},
+        "UTC-5 (Eastern US)": {"offset": -5, "probability": 0, "explanation": ""},
+        "UTC-4 (Atlantic Canada)": {"offset": -4, "probability": 0, "explanation": ""},
+        "UTC-3 (Brazil, Argentina)": {"offset": -3, "probability": 0, "explanation": ""},
+        "UTC-2 to UTC-1 (Mid-Atlantic)": {"offset": -2, "probability": 0, "explanation": ""},
+        "UTC+0 (UK, Portugal)": {"offset": 0, "probability": 0, "explanation": ""},
+        "UTC+1 (Central Europe)": {"offset": 1, "probability": 0, "explanation": ""},
+        "UTC+2 (Eastern Europe)": {"offset": 2, "probability": 0, "explanation": ""},
+        "UTC+3 (Moscow, Middle East)": {"offset": 3, "probability": 0, "explanation": ""},
+        "UTC+4 to UTC+5 (Dubai, Pakistan)": {"offset": 4, "probability": 0, "explanation": ""},
+        "UTC+5:30 (India)": {"offset": 5.5, "probability": 0, "explanation": ""},
+        "UTC+6 to UTC+7 (Bangladesh, Thailand)": {"offset": 6, "probability": 0, "explanation": ""},
+        "UTC+8 (China, Singapore)": {"offset": 8, "probability": 0, "explanation": ""},
+        "UTC+9 (Japan, Korea)": {"offset": 9, "probability": 0, "explanation": ""},
+        "UTC+10 (Australia Eastern)": {"offset": 10, "probability": 0, "explanation": ""},
+        "UTC+11 to UTC+12 (New Zealand)": {"offset": 11, "probability": 0, "explanation": ""},
+    }
+    
+    # Define what hours are typically sleep hours (e.g., 11 PM to 7 AM local time)
+    typical_sleep_hours = list(range(23, 24)) + list(range(0, 7))
+    
+    # Identify longest consecutive inactive period
+    inactive_runs = []
+    current_run = []
+    
+    # Find runs of low activity hours (normalized score > 0.8)
+    for hour in range(24):
+        if inactivity_scores[hour] > 0.8:
+            current_run.append(hour)
+        else:
+            if current_run:
+                inactive_runs.append(current_run)
+                current_run = []
+    
+    if current_run:  # Don't forget the last run
+        inactive_runs.append(current_run)
+    
+    # Handle case where inactivity wraps around midnight
+    if inactive_runs and len(inactive_runs) > 1:
+        if inactive_runs[0][0] == 0 and inactive_runs[-1][-1] == 23:
+            inactive_runs = [inactive_runs[-1] + inactive_runs[0]] + inactive_runs[1:-1]
+    
+    longest_inactive_period = max(inactive_runs, key=len) if inactive_runs else []
+    
+    # For each timezone, check if the inactive hours match sleep hours
+    for tz_name, tz_data in timezones.items():
+        offset = tz_data["offset"]
+        sleep_hours_local = []
+        
+        # Calculate sleep hours in UTC based on timezone offset
+        for local_hour in typical_sleep_hours:
+            utc_hour = int((local_hour - offset) % 24)  # Convert to integer for indexing
+            sleep_hours_local.append(utc_hour)
+        
+        # Calculate typical awake hours
+        awake_hours_local = [h for h in range(24) if h not in sleep_hours_local]
+        
+        # Sleep match: high inactivity during sleep hours
+        sleep_inactivity = sum(inactivity_scores[int(h)] for h in sleep_hours_local) / len(sleep_hours_local)
+        
+        # Awake match: low inactivity during awake hours
+        awake_activity = 1 - sum(inactivity_scores[int(h)] for h in awake_hours_local) / len(awake_hours_local)
+        
+        # Calculate overall match score (weighted average)
+        overall_score = (sleep_inactivity * 0.7) + (awake_activity * 0.3)
+        
+        # Convert to a percentage and round to nearest 5%
+        probability = min(95, max(5, round(overall_score * 100 / 5) * 5))
+        
+        # If we have a longest inactive period, check if it aligns with this timezone's expected sleep time
+        if longest_inactive_period:
+            local_inactive_start = int((longest_inactive_period[0] + offset) % 24)
+            local_inactive_end = int((longest_inactive_period[-1] + offset) % 24)
+            
+            # If the inactive period aligns with typical sleep hours (evening to morning), boost the probability
+            typical_sleep_start = 22  # 10 PM
+            typical_sleep_end = 8     # 8 AM
+            
+            if ((local_inactive_start >= typical_sleep_start or local_inactive_start <= 3) and
+                (local_inactive_end >= 5 and local_inactive_end <= typical_sleep_end)):
+                # This is a good match - boost probability
+                probability = min(95, probability + 15)
+                
+                # Generate explanation
+                local_start = f"{local_inactive_start:02d}:00"
+                local_end = f"{(local_inactive_end + 1) % 24:02d}:00"
+                tz_data["explanation"] = f"Inactive {local_start}-{local_end} local time, aligns with typical sleep hours"
+            else:
+                # Generate explanation for less clear matches
+                local_start = f"{local_inactive_start:02d}:00"
+                local_end = f"{(local_inactive_end + 1) % 24:02d}:00"
+                tz_data["explanation"] = f"Inactive {local_start}-{local_end} local time"
+        else:
+            # No clear inactive period
+            tz_data["explanation"] = "No clear inactive period identified"
+            probability = 10  # Low probability for inconsistent patterns
+        
+        tz_data["probability"] = probability
+    
+    # Display timezone probability table
+    tz_table = Table(title="Probable Timezones Based on Inactivity Patterns")
+    tz_table.add_column("Timezone", style="cyan")
+    tz_table.add_column("Probability", style="green", justify="right")
+    tz_table.add_column("Explanation", style="yellow")
+    
+    # Sort timezones by probability
+    sorted_timezones = sorted(timezones.items(), key=lambda x: x[1]['probability'], reverse=True)
+    
+    # Show top 3 most likely timezones
+    for tz, data in sorted_timezones[:3]:
+        tz_table.add_row(
+            tz,
+            f"{data['probability']}%",
+            data['explanation']
+        )
+    
+    console.print(tz_table)
+    
     # Write data to CSV
     os.makedirs('reports', exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d%H%M')
@@ -1127,6 +1259,13 @@ def option_8(api, console):
         
         # Write totals
         writer.writerow(['TOTAL'] + hour_totals)
+        
+        # Write timezone data
+        writer.writerow([])
+        writer.writerow(['Timezone Analysis'])
+        writer.writerow(['Timezone', 'Probability', 'Explanation'])
+        for tz, data in sorted_timezones:
+            writer.writerow([tz, f"{data['probability']}%", data['explanation']])
     
     console.print(f"\n[yellow]Activity data saved to {csv_filename}[/yellow]")
 
