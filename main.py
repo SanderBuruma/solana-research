@@ -94,6 +94,7 @@ def print_usage():
         console.print("-5 <address>     View DeFi Summary for Wallets")
         console.print("-6 <token>       Get Holder Addresses using bullX")
         console.print("-7 <address>     Find Wallets Being Copied")
+        console.print("-8 <address>     Generate Activity Heatmap by Day/Hour")
         console.print("\n[bold]Examples:[/bold]")
         console.print("python main.py -1 <address>")
         console.print("python main.py -2 <address>")
@@ -101,6 +102,7 @@ def print_usage():
         console.print("python main.py -4 <address>")
         console.print("python main.py -5 <address1> <address2> <address3>")
         console.print("python main.py -7 <address>")
+        console.print("python main.py -8 <address>")
 
     except Exception as e:
         # Handle any other errors gracefully
@@ -113,6 +115,7 @@ def print_usage():
         console.print("-5 <address>     View DeFi Summary for Wallets")
         console.print("-6 <token>       Get Holder Addresses using bullX")
         console.print("-7 <address>     Find Wallets Being Copied")
+        console.print("-8 <address>     Generate Activity Heatmap by Day/Hour")
         console.print("\n[bold]Examples:[/bold]")
         console.print("python main.py -1 <address>")
         console.print("python main.py -2 <address>")
@@ -120,6 +123,7 @@ def print_usage():
         console.print("python main.py -4 <address>")
         console.print("python main.py -5 <address1> <address2> <address3>")
         console.print("python main.py -7 <address>")
+        console.print("python main.py -8 <address>")
 
 def option_1(api, console):       
     if len(sys.argv) != 3:
@@ -988,6 +992,144 @@ def option_7(api, console):
     
     console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
 
+def option_8(api, console):
+    """
+    Generate a heatmap visualization of DeFi activity by hour and day of week
+    
+    This function creates a 7x24 grid (days x hours) where each cell represents
+    the amount of DeFi activity that occurred during that specific day/hour combination.
+    The intensity of the color represents the relative amount of activity.
+    """
+    if len(sys.argv) != 3:
+        print("Error: Wallet address required for activity heatmap")
+        print_usage()
+        sys.exit(1)
+    
+    target_wallet = sys.argv[2]
+    
+    # Import required rich components for visualization
+    from rich.text import Text
+    from rich.box import SIMPLE
+    
+    # Define day names for labels
+    days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    
+    console.print(f"\n[yellow]Fetching DeFi trading history for {target_wallet}...[/yellow]")
+    trades = api.get_dex_trading_history(target_wallet)
+    
+    if not trades:
+        console.print("[red]No DeFi trading history found for this wallet[/red]")
+        return
+    
+    console.print(f"Found [green]{len(trades)}[/green] DeFi transactions")
+    
+    # Create a 7x24 grid to count activity by day and hour
+    activity_grid = [[0 for _ in range(24)] for _ in range(7)]
+    
+    # Count transactions by day of week and hour
+    for trade in trades:
+        # Convert Unix timestamp to datetime
+        trade_time = datetime.fromtimestamp(trade.block_time)
+        # Get day of week (0 = Monday, 6 = Sunday)
+        day_of_week = trade_time.weekday()
+        # Get hour of day (0-23)
+        hour_of_day = trade_time.hour
+        
+        # Increment the counter for this day/hour combination
+        activity_grid[day_of_week][hour_of_day] += 1
+    
+    # Find maximum activity count for scaling
+    max_activity = max(max(row) for row in activity_grid)
+    
+    if max_activity == 0:
+        console.print("[yellow]No activity data to display[/yellow]")
+        return
+    
+    # Create a table for visualization
+    heatmap_table = Table(
+        title=f"DeFi Activity Heatmap for {target_wallet}",
+        show_header=True,
+        header_style="bold magenta",
+        box=SIMPLE,
+        expand=False,
+        padding=0
+    )
+    
+    # Add hour columns
+    heatmap_table.add_column("Day", style="cyan", justify="right")
+    for hour in range(24):
+        heatmap_table.add_column(f"{hour}", justify="center", width=3)
+    
+    # Add a row for the total activity per hour
+    hour_totals = [sum(activity_grid[day][hour] for day in range(7)) for hour in range(24)]
+    total_cells = []
+    
+    for hour in range(24):
+        # Calculate intensity (0-255) based on activity level
+        if hour_totals[hour] > 0:
+            intensity = min(255, int((hour_totals[hour] / max_activity) * 255))
+            # Create color based on intensity
+            # Using a grayscale from black (low) to white (high)
+            color_value = f"#{intensity:02x}{intensity:02x}{intensity:02x}"
+            total_cells.append(Text("■", style=f"on {color_value}"))
+        else:
+            total_cells.append(Text("■", style="on black"))
+    
+    heatmap_table.add_row("Total", *total_cells, end_section=True)
+    
+    # Fill the table with activity data
+    for day_idx, day_name in enumerate(days_of_week):
+        day_cells = []
+        
+        for hour in range(24):
+            activity_count = activity_grid[day_idx][hour]
+            
+            # Calculate intensity (0-255) based on activity level
+            if activity_count > 0:
+                intensity = min(255, int((activity_count / max_activity) * 255))
+                # Create color based on intensity
+                # Using a grayscale from black (low) to white (high)
+                color_value = f"#{intensity:02x}{intensity:02x}{intensity:02x}"
+                day_cells.append(Text("■", style=f"on {color_value}"))
+            else:
+                day_cells.append(Text("■", style="on black"))
+        
+        heatmap_table.add_row(day_name, *day_cells)
+    
+    console.print(heatmap_table)
+    
+    # Display summary statistics
+    most_active_day_idx = [sum(row) for row in activity_grid].index(max([sum(row) for row in activity_grid]))
+    most_active_day = days_of_week[most_active_day_idx]
+    
+    most_active_hour = hour_totals.index(max(hour_totals))
+    most_active_hour_formatted = f"{most_active_hour:02d}:00 - {(most_active_hour+1) % 24:02d}:00"
+    
+    console.print(f"\n[bold]Activity Summary:[/bold]")
+    console.print(f"Most active day: [green]{most_active_day}[/green] with [green]{sum(activity_grid[most_active_day_idx])}[/green] transactions")
+    console.print(f"Most active hour: [green]{most_active_hour_formatted}[/green] with [green]{max(hour_totals)}[/green] transactions")
+    
+    # Write data to CSV
+    os.makedirs('reports', exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d%H%M')
+    csv_filename = f'reports/activity_heatmap_{target_wallet}_{timestamp}.csv'
+    
+    with open(csv_filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        # Write header with hours
+        header = ['Day'] + [f"{hour:02d}:00" for hour in range(24)]
+        writer.writerow(header)
+        
+        # Write data rows
+        for day_idx, day_name in enumerate(days_of_week):
+            row = [day_name] + [activity_grid[day_idx][hour] for hour in range(24)]
+            writer.writerow(row)
+        
+        # Write totals
+        writer.writerow(['TOTAL'] + hour_totals)
+    
+    console.print(f"\n[yellow]Activity data saved to {csv_filename}[/yellow]")
+
 def main():
     if len(sys.argv) < 2:
         print_usage()
@@ -1014,6 +1156,8 @@ def main():
         option_6(api, console)
     elif option == "-7":
         option_7(api, console)
+    elif option == "-8":
+        option_8(api, console)
     else:
         print(f"Error: Unknown option {option}")
         print_usage()
