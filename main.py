@@ -776,6 +776,12 @@ def option_4(api, console):
     
     console.print(f"Analyzing first buys for [green]{len(first_buys)}[/green] unique tokens")
     
+    # Print token addresses being analyzed
+    console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
+    for i, token in enumerate(first_buys.keys(), 1):
+        console.print(f"{i}. [cyan]{token}[/cyan]")
+    console.print("")
+    
     # Track progress
     with console.status("[bold green]Scanning for copy traders...[/bold green]", spinner="dots") as status:
         # For each token, find wallets that bought within 30 seconds after the target
@@ -909,6 +915,12 @@ def option_7(api, console):
                     break
     
     console.print(f"Analyzing first buys for [green]{len(first_buys)}[/green] unique tokens")
+    
+    # Print token addresses being analyzed
+    console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
+    for i, token in enumerate(first_buys.keys(), 1):
+        console.print(f"{i}. [cyan]{token}[/cyan]")
+    console.print("")
     
     # Track progress
     with console.status("[bold green]Scanning for trading signal sources...[/bold green]", spinner="dots") as status:
