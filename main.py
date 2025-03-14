@@ -761,31 +761,39 @@ def option_4(api, console):
     
     console.print(f"Found [green]{len(trades)}[/green] DEX trades")
     
-    # Get first buys for unique tokens (where target wallet bought a token using SOL)
-    first_buys = {}  # {token_address: trade_data}
+    # Get the 10 most recent token buys (where target wallet bought a token using SOL)
+    all_token_buys = []  # List of (token, trade) tuples
     for trade in trades:
         # Check if this is a buy (SOL -> token)
         if is_sol_token(trade.token1) and not is_sol_token(trade.token2):
             token = trade.token2
-            if token not in first_buys:
-                first_buys[token] = trade
-                
-                # Stop once we have 10 tokens
-                if len(first_buys) >= 10:
-                    break
+            all_token_buys.append((token, trade))
     
-    console.print(f"Analyzing first buys for [green]{len(first_buys)}[/green] unique tokens")
+    # Sort by timestamp (newest first)
+    all_token_buys.sort(key=lambda x: x[1].block_time, reverse=True)
+    
+    # Take the 10 most recent unique tokens
+    seen_tokens = set()
+    recent_buys = {}  # {token_address: trade_data}
+    for token, trade in all_token_buys:
+        if token not in seen_tokens:
+            seen_tokens.add(token)
+            recent_buys[token] = trade
+            if len(recent_buys) >= 10:
+                break
+    
+    console.print(f"Analyzing [green]{len(recent_buys)}[/green] most recent unique token buys")
     
     # Print token addresses being analyzed
     console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
-    for i, token in enumerate(first_buys.keys(), 1):
+    for i, token in enumerate(recent_buys.keys(), 1):
         console.print(f"{i}. [cyan]{token}[/cyan]")
     console.print("")
     
     # Track progress
     with console.status("[bold green]Scanning for copy traders...[/bold green]", spinner="dots") as status:
         # For each token, find wallets that bought within 30 seconds after the target
-        for token, target_trade in first_buys.items():
+        for token, target_trade in recent_buys.items():
             token_name = token[:5] + "..." + token[-5:]
             target_time = target_trade.block_time
             
@@ -901,31 +909,39 @@ def option_7(api, console):
     
     console.print(f"Found [green]{len(trades)}[/green] DEX trades")
     
-    # Get first buys for unique tokens (where target wallet bought a token using SOL)
-    first_buys = {}  # {token_address: trade_data}
+    # Get the 10 most recent token buys (where target wallet bought a token using SOL)
+    all_token_buys = []  # List of (token, trade) tuples
     for trade in trades:
         # Check if this is a buy (SOL -> token)
         if is_sol_token(trade.token1) and not is_sol_token(trade.token2):
             token = trade.token2
-            if token not in first_buys:
-                first_buys[token] = trade
-                
-                # Stop once we have 10 tokens
-                if len(first_buys) >= 10:
-                    break
+            all_token_buys.append((token, trade))
     
-    console.print(f"Analyzing first buys for [green]{len(first_buys)}[/green] unique tokens")
+    # Sort by timestamp (newest first)
+    all_token_buys.sort(key=lambda x: x[1].block_time, reverse=True)
+    
+    # Take the 10 most recent unique tokens
+    seen_tokens = set()
+    recent_buys = {}  # {token_address: trade_data}
+    for token, trade in all_token_buys:
+        if token not in seen_tokens:
+            seen_tokens.add(token)
+            recent_buys[token] = trade
+            if len(recent_buys) >= 10:
+                break
+    
+    console.print(f"Analyzing [green]{len(recent_buys)}[/green] most recent unique token buys")
     
     # Print token addresses being analyzed
     console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
-    for i, token in enumerate(first_buys.keys(), 1):
+    for i, token in enumerate(recent_buys.keys(), 1):
         console.print(f"{i}. [cyan]{token}[/cyan]")
     console.print("")
     
     # Track progress
     with console.status("[bold green]Scanning for trading signal sources...[/bold green]", spinner="dots") as status:
         # For each token, find wallets that bought within 30 seconds BEFORE the target
-        for token, target_trade in first_buys.items():
+        for token, target_trade in recent_buys.items():
             token_name = token[:5] + "..." + token[-5:]
             target_time = target_trade.block_time
             
