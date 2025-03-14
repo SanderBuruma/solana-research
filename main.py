@@ -241,32 +241,54 @@ def option_3(api, console):
         print("Error: Address required for balance history")
         print_usage()
         sys.exit(1)
-    address = sys.argv[2]
-
-    # Get the filter string wherever it appears if it appears
-    filter = None
+    
+    # Check if we're aggregating multiple addresses
+    aggregate_mode = False
+    addresses = []
+    
+    # Get the addresses and check for aggregation flag
+    for i, arg in enumerate(sys.argv):
+        if arg == "-3":
+            aggregate_mode = True
+        elif i >= 2 and not arg.startswith("-"):
+            addresses.append(arg)
+    
+    # If no addresses were found, use the first argument as a single address
+    if not addresses:
+        addresses = [sys.argv[2]]
+    
+    # Get the filter string wherever it appears
+    filter_str = None
     for i, arg in enumerate(sys.argv):
         if arg == "-f":
             if not len(sys.argv) > i+1:
                 print("Error: Filter required")
                 filter_token_stats(None, '')
                 sys.exit(1)
-            filter = sys.argv[i+1]
+            filter_str = sys.argv[i+1]
             break
 
-    api.console.print("\nFetching DEX trading history...", style="yellow")
-    trades = api.get_dex_trading_history(address)
-    if not trades:
+    # Collect all trades
+    all_trades = []
+    
+    for address in addresses:
+        api.console.print(f"\nFetching DEX trading history for {address}...", style="yellow")
+        trades = api.get_dex_trading_history(address)
+        if trades:
+            api.console.print(f"Found [green]{len(trades)}[/green] DEX trades for {address}")
+            all_trades.extend(trades)
+    
+    if not all_trades:
         api.console.print("[red]No DEX trading history found[/red]")
         return
 
-    api.console.print(f"\nFound [green]{len(trades)}[/green] DEX trades\n")
+    api.console.print(f"\nTotal: [green]{len(all_trades)}[/green] DEX trades across {len(addresses)} {'addresses' if len(addresses) > 1 else 'address'}\n")
     
-    # Use the new analyze_trades function
-    token_data, roi_data, tx_summary = analyze_trades(trades, api.console)
+    # Use the analyze_trades function
+    token_data, roi_data, tx_summary = analyze_trades(all_trades, api.console)
     
     # Apply filtering if specified
-    if filter:
+    if filter_str:
         # Convert token_data back to the format expected by filter_token_stats
         token_stats = {}
         for token in token_data:
@@ -281,15 +303,15 @@ def option_3(api, console):
             }
         
         # Show the filter being applied
-        console.print(f"\n[yellow]Applying filter: [cyan]{filter}[/cyan][/yellow]")
-        filtered_stats = filter_token_stats(token_stats, filter)
+        console.print(f"\n[yellow]Applying filter: [cyan]{filter_str}[/cyan][/yellow]")
+        filtered_stats = filter_token_stats(token_stats, filter_str)
         if not filtered_stats:
             console.print("[red]No tokens match the specified filter criteria[/red]")
             return
         # Filter token_data to match filtered_stats
         token_data = [t for t in token_data if t['address'] in filtered_stats]
         console.print(f"[green]{len(token_data)} tokens match the filter criteria[/green]\n")
-    elif filter == "":
+    elif filter_str == "":
         # Show filter usage information
         filter_token_stats({}, None)
         return
@@ -303,12 +325,12 @@ def option_3(api, console):
     table.add_column("SOL Invested", justify="right", style="green")
     table.add_column("SOL Received", justify="right", style="green")
     table.add_column("SOL Profit", justify="right", style="green")
-    table.add_column("Buy Fees", justify="right", style="red")
+    table.add_column("Fees", justify="right", style="red")
     table.add_column("Remaining", justify="right", style="yellow")
     table.add_column("Total Profit", justify="right", style="green")
     table.add_column("Token Price", justify="right", style="magenta")
     table.add_column("Trades", justify="right", style="cyan")
-
+    
     # Track totals
     total_invested = 0
     total_received = 0
@@ -317,34 +339,24 @@ def option_3(api, console):
     total_trades = 0
     total_buy_fees = 0
     total_sell_fees = 0
-    total_fees = sum(token['total_fees'] for token in token_data)
-
+    total_fees = 0
+    
+    # Add rows to the table
     for token in token_data:
         # Format hold time
         hold_time_td = timedelta(seconds=token['hold_time'])
-        if hold_time_td.days > 0:
-            hold_time = f"{hold_time_td.days}d {hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
-        elif hold_time_td.seconds//3600 > 0:
-            hold_time = f"{hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
-        else:
-            hold_time = f"{(hold_time_td.seconds%3600)//60}m"
-
-        # Format market cap with appropriate suffix and color
+        hold_time = f"{hold_time_td.days}d {hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
+        
+        # Format market cap
         mc = token['first_mc']
         if mc >= 1_000_000_000:
-            mc_color = "red"
+            mc_color = "green"
             mc_value = f"{mc/1_000_000_000:.1f}B"
-        elif mc >= 200_000_000:
-            mc_color = "yellow"
-            mc_value = f"{mc/1_000_000:.1f}M"
         elif mc >= 1_000_000:
-            mc_color = "green"
-            mc_value = f"{mc/1_000_000:.1f}M"
-        elif mc >= 250_000:
-            mc_color = "green"
-            mc_value = f"{mc/1_000:.1f}K"
-        elif mc >= 25_000:
             mc_color = "yellow"
+            mc_value = f"{mc/1_000_000:.1f}M"
+        elif mc >= 1_000:
+            mc_color = "red"
             mc_value = f"{mc/1_000:.1f}K"
         else:
             mc_color = "red"
@@ -361,6 +373,7 @@ def option_3(api, console):
         total_trades += token['trades']
         total_buy_fees += token['buy_fees']
         total_sell_fees += token['sell_fees']
+        total_fees += token['total_fees']
         
         table.add_row(
             format_token_address(token['address']),
@@ -409,13 +422,13 @@ def option_3(api, console):
     for period in ['24h', '7d', '30d']:
         period_data = roi_data[period]
         profit_color = "green" if period_data['profit'] >= 0 else "red"
-        roi_color = "green" if period_data['roi_percent'] >= 0 else "red"
+        roi_color = "green" if period_data['roi_percent'] and period_data['roi_percent'] >= 0 else "red"
         roi_table.add_row(
             period.upper(),
             f"{period_data['invested']:.3f} SOL",
             f"{period_data['received']:.3f} SOL",
             f"[{profit_color}]{'+' if period_data['profit'] >= 0 else ''}{period_data['profit']:.3f} SOL[/{profit_color}]",
-            f"[{roi_color}]{'+' if period_data['roi_percent'] >= 0 else ''}{period_data['roi_percent']:.2f}%[/{roi_color}]"
+            f"[{roi_color}]{'+' if period_data['roi_percent'] and period_data['roi_percent'] >= 0 else ''}{period_data['roi_percent']:.2f}%[/{roi_color}]" if period_data['roi_percent'] is not None else "N/A"
         )
 
     console.print()
@@ -453,9 +466,14 @@ def option_3(api, console):
     console.print()
     console.print(transactions_table)
     
-    # Define csv_filename before using it
+    # Define csv_filename based on aggregation mode
     os.makedirs('reports', exist_ok=True)
-    csv_filename = f'reports/{address}.csv'
+    
+    if aggregate_mode and len(addresses) > 1:
+        timestamp = datetime.now().strftime('%Y-%m-%d:%H-%M-%S')
+        csv_filename = f'reports/aggregate-{timestamp}.csv'
+    else:
+        csv_filename = f'reports/{addresses[0]}.csv'
 
     # Save to CSV
     with open(csv_filename, 'w') as f:
@@ -464,7 +482,7 @@ def option_3(api, console):
             hold_time_td = timedelta(seconds=token['hold_time'])
             hold_time = f"{hold_time_td.days}d {hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
             f.write(f"{token['address']}," + 
-                    f"{datetime.fromtimestamp(token['last_trade']).strftime('%Y-%m-%d %H:%M')}," +
+                    f"{datetime.fromtimestamp(token['first_trade']).strftime('%Y-%m-%d %H:%M')}," +
                     f"{hold_time}," +
                     f"{datetime.fromtimestamp(token['last_trade']).strftime('%Y-%m-%d %H:%M')}," +
                     f"{token['first_mc']:.2f}," +
@@ -492,7 +510,10 @@ def option_3(api, console):
                 f"{total_overall_profit:.3f},," +  # Already includes fees
                 f"{total_trades}\n")
 
-    console.print(f"\n[yellow]Report saved to {csv_filename}[/yellow]")
+    if aggregate_mode and len(addresses) > 1:
+        console.print(f"\n[yellow]Aggregate report saved to {csv_filename}[/yellow]")
+    else:
+        console.print(f"\n[yellow]Report saved to {csv_filename}[/yellow]")
 
 def option_5(api, console):
     if len(sys.argv) < 3:
