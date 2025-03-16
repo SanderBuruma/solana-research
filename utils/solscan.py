@@ -233,8 +233,10 @@ class SolscanAPI:
         Returns:
             List[SolscanDefiActivity]: List of trading activities
         """
-        os.makedirs('reports', exist_ok=True)
-        csv_filename = f'reports/transactions_{address}.csv'
+        # Create directory for this wallet address
+        wallet_dir = f'reports/{address}'
+        os.makedirs(wallet_dir, exist_ok=True)
+        csv_filename = f'{wallet_dir}/transactions.csv'
         cached_trades = {}
         all_trades = []
 

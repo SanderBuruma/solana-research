@@ -176,7 +176,12 @@ def option_1(api, console):
             
             # Save balance information to CSV
             timestamp = datetime.now().strftime('%Y-%m-%d:%H-%M-%S')
-            csv_filename = f"./reports/balance_{address}.csv"
+            
+            # Create directory for this wallet address
+            wallet_dir = f"./reports/{address}"
+            os.makedirs(wallet_dir, exist_ok=True)
+            
+            csv_filename = f"{wallet_dir}/balance.csv"
             
             # Create CSV file with headers if it doesn't exist
             if not os.path.exists(csv_filename):
@@ -470,14 +475,16 @@ def option_3(api, console):
     console.print()
     console.print(transactions_table)
     
-    # Define csv_filename based on aggregation mode
-    os.makedirs('reports', exist_ok=True)
+    # Create directory for this wallet address
+    wallet_dir = f"./reports/{address}"
+    os.makedirs(wallet_dir, exist_ok=True)
     
+    
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     if aggregate_mode and len(addresses) > 1:
-        timestamp = datetime.now().strftime('%Y-%m-%d:%H-%M-%S')
-        csv_filename = f'reports/aggregate-{timestamp}.csv'
+        csv_filename = f'reports/aggregate-balance-{timestamp}.csv'
     else:
-        csv_filename = f'reports/{addresses[0]}.csv'
+        csv_filename = f'{wallet_dir}/balance-{timestamp}.csv'
 
     # Save to CSV
     with open(csv_filename, 'w') as f:
@@ -649,8 +656,7 @@ def option_5(api, console):
     console.print(summary_table)
     
     # Save to CSV
-    os.makedirs('reports', exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d%H%M')
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     csv_filename = f'reports/{timestamp}-option5.csv'
     
     with open(csv_filename, 'w', newline='') as f:
@@ -853,9 +859,31 @@ def option_4(api, console):
     console.print(copy_traders_table)
     
     # Save results to CSV
-    os.makedirs('reports', exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d%H%M')
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     csv_filename = f'reports/copy_traders_{target_wallet}_{timestamp}.csv'
+    
+    with open(csv_filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Wallet Address', 'Copy Count', 'Unique Tokens', 'Average Delay (s)'])
+        
+        for wallet, data in sorted_copy_traders:
+            avg_delay = sum(data['delays']) / len(data['delays'])
+            writer.writerow([
+                wallet,
+                data['count'],
+                len(data['tokens']),
+                f"{avg_delay:.2f}"
+            ])
+    
+    console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
+
+    # Save results to CSV
+    # Create directory for this wallet address
+    wallet_dir = f'reports/{target_wallet}'
+    os.makedirs(wallet_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
+    csv_filename = f'{wallet_dir}/copy_traders_{timestamp}.csv'
     
     with open(csv_filename, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -1001,9 +1029,31 @@ def option_7(api, console):
     console.print(copy_sources_table)
     
     # Save results to CSV
-    os.makedirs('reports', exist_ok=True)
-    timestamp = datetime.now().strftime('%Y%m%d%H%M')
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     csv_filename = f'reports/copy_sources_{target_wallet}_{timestamp}.csv'
+    
+    with open(csv_filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Wallet Address', 'Copy Count', 'Unique Tokens', 'Average Delay (s)'])
+        
+        for wallet, data in sorted_copy_sources:
+            avg_delay = sum(data['delays']) / len(data['delays'])
+            writer.writerow([
+                wallet,
+                data['count'],
+                len(data['tokens']),
+                f"{avg_delay:.2f}"
+            ])
+    
+    console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
+
+    # Save results to CSV
+    # Create directory for this wallet address
+    wallet_dir = f'reports/{target_wallet}'
+    os.makedirs(wallet_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
+    csv_filename = f'{wallet_dir}/copy_sources_{timestamp}.csv'
     
     with open(csv_filename, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -1270,9 +1320,39 @@ def option_8(api, console):
     console.print(tz_table)
     
     # Write data to CSV
-    os.makedirs('reports', exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d%H%M')
     csv_filename = f'reports/activity_heatmap_{target_wallet}_{timestamp}.csv'
+    
+    with open(csv_filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        # Write header with hours
+        header = ['Day'] + [f"{hour:02d}:00" for hour in range(24)]
+        writer.writerow(header)
+        
+        # Write data rows
+        for day_idx, day_name in enumerate(days_of_week):
+            row = [day_name] + [activity_grid[day_idx][hour] for hour in range(24)]
+            writer.writerow(row)
+        
+        # Write totals
+        writer.writerow(['TOTAL'] + hour_totals)
+        
+        # Write timezone data
+        writer.writerow([])
+        writer.writerow(['Timezone Analysis'])
+        writer.writerow(['Timezone', 'Probability', 'Explanation'])
+        for tz, data in sorted_timezones:
+            writer.writerow([tz, f"{data['probability']}%", data['explanation']])
+    
+    console.print(f"\n[yellow]Activity data saved to {csv_filename}[/yellow]")
+
+    # Write data to CSV
+    # Create directory for this wallet address
+    wallet_dir = f'reports/{target_wallet}'
+    os.makedirs(wallet_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y%m%d%H%M')
+    csv_filename = f'{wallet_dir}/activity_heatmap_{timestamp}.csv'
     
     with open(csv_filename, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -1308,6 +1388,9 @@ def main():
     api = SolscanAPI()
     console = Console()
     option = sys.argv[1]
+
+    # Define csv_filename based on aggregation mode
+    os.makedirs('reports', exist_ok=True)
 
     if option == "-1":
         option_1(api, console)
