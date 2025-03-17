@@ -851,6 +851,10 @@ def option_4(api, console):
     for wallet, data in sorted_wallets:
         before_count = len(data['before'])
         after_count = len(data['after'])
+
+        # if before_count and after_count is < 2, don't add to table
+        if before_count < 2 and after_count < 2:
+            continue
         
         wallets_table.add_row(
             wallet,
