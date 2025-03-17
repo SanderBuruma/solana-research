@@ -779,8 +779,6 @@ def option_4(api, console):
     # Sort by timestamp (newest first)
     target_buys.sort(key=lambda x: x[1].block_time, reverse=True)
 
-    # Reduce target buys to 10
-    target_buys = target_buys[:10]
     # Take unique tokens
     seen_tokens = set()
     recent_buys = {}  # {token_address: trade_data}
@@ -788,6 +786,9 @@ def option_4(api, console):
         if token not in seen_tokens:
             seen_tokens.add(token)
             recent_buys[token] = trade
+
+    # Reduce recent buys to 10 most recent trades
+    recent_buys = dict(list(recent_buys.items())[:10])
     
     console.print(f"Analyzing [green]{len(recent_buys)}[/green] unique token buys")
     
