@@ -737,31 +737,27 @@ def option_6(api, console):
 
 def option_4(api, console):
     """
-    Detect wallets that might be copy trading the target wallet
+    Detect wallets that bought the same tokens as the target wallet
     
-    Steps:
-    1. Get the first 10 token buys for the target wallet
-    2. For each token, get all trades and find wallets that bought within 30 seconds after the target
-       (uses optimized time-filtered search to reduce API calls)
-    3. Track wallets that show up multiple times (suggesting copy trading)
-    4. Display summary of potential copy traders
+    Shows a table with wallets and counts of:
+    - Number of unique tokens bought ≤30 seconds BEFORE the target
+    - Number of unique tokens bought ≤30 seconds AFTER the target
     """
     if len(sys.argv) != 3:
-        print("Error: Wallet address required for copy trader detection")
+        print("Error: Wallet address required for wallets analysis")
         print_usage()
         sys.exit(1)
     
     target_wallet = sys.argv[2]
     
     # Create a table to display results
-    copy_traders_table = Table(title=f"Potential Copy Traders of {target_wallet}")
-    copy_traders_table.add_column("Wallet Address", style="cyan")
-    copy_traders_table.add_column("Copy Count", justify="right", style="yellow")
-    copy_traders_table.add_column("Tokens", style="green")
-    copy_traders_table.add_column("Avg Time Delay (s)", justify="right", style="magenta")
+    wallets_table = Table(title=f"Wallets Trading Same Tokens as {target_wallet}")
+    wallets_table.add_column("Wallet Address", style="cyan")
+    wallets_table.add_column("Before (≤30s)", justify="right", style="yellow")
+    wallets_table.add_column("After (≤30s)", justify="right", style="green")
     
-    # Dictionary to track potential copy traders
-    copy_traders = {}  # Structure: {wallet_address: {'count': int, 'tokens': set, 'delays': list}}
+    # Dictionary to track wallet stats
+    wallets = {}  # Structure: {wallet_address: {'before': set(), 'after': set()}}
     
     console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
     trades = api.get_dex_trading_history(target_wallet, quiet=True)
@@ -772,28 +768,28 @@ def option_4(api, console):
     
     console.print(f"Found [green]{len(trades)}[/green] DEX trades")
     
-    # Get the 10 most recent token buys (where target wallet bought a token using SOL)
-    all_token_buys = []  # List of (token, trade) tuples
+    # Get token buys (where target wallet bought a token using SOL)
+    target_buys = []  # List of (token, trade) tuples
     for trade in trades:
         # Check if this is a buy (SOL -> token)
         if is_sol_token(trade.token1) and not is_sol_token(trade.token2):
             token = trade.token2
-            all_token_buys.append((token, trade))
+            target_buys.append((token, trade))
     
     # Sort by timestamp (newest first)
-    all_token_buys.sort(key=lambda x: x[1].block_time, reverse=True)
-    
-    # Take the 10 most recent unique tokens
+    target_buys.sort(key=lambda x: x[1].block_time, reverse=True)
+
+    # Reduce target buys to 10
+    target_buys = target_buys[:10]
+    # Take unique tokens
     seen_tokens = set()
     recent_buys = {}  # {token_address: trade_data}
-    for token, trade in all_token_buys:
+    for token, trade in target_buys:
         if token not in seen_tokens:
             seen_tokens.add(token)
             recent_buys[token] = trade
-            if len(recent_buys) >= 10:
-                break
     
-    console.print(f"Analyzing [green]{len(recent_buys)}[/green] most recent unique token buys")
+    console.print(f"Analyzing [green]{len(recent_buys)}[/green] unique token buys")
     
     # Print token addresses being analyzed
     console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
@@ -802,23 +798,18 @@ def option_4(api, console):
     console.print("")
     
     # Track progress
-    with console.status("[bold green]Scanning for copy traders...[/bold green]", spinner="dots") as status:
-        # For each token, find wallets that bought within 30 seconds after the target
+    with console.status("[bold green]Scanning for wallets trading same tokens...[/bold green]", spinner="dots") as status:
+        # For each token, find wallets that bought within 30 seconds before/after the target
         for token, target_trade in recent_buys.items():
             token_name = token[:5] + "..." + token[-5:]
             target_time = target_trade.block_time
             
             status.update(f"[bold green]Scanning transactions for token {token_name}...[/bold green]")
             
-            # Get all trades for this token with time filtering (only trades after target's trade)
-            time_filter = {
-                'reference_time': target_time,
-                'direction': 'after',
-                'window': 30
-            }
-            token_trades = api.get_dex_trading_history(token, time_filter, quiet=True)
+            # Get all trades for this token (without time filtering to get both before and after)
+            token_trades = api.get_dex_trading_history(token, quiet=True)
             
-            # Find trades within 30 seconds after the target's trade
+            # Find trades within 30 seconds before and after the target's trade
             for trade in token_trades:
                 # Skip if it's not a buy (SOL -> token)
                 if not is_sol_token(trade.token1) or is_sol_token(trade.token2):
@@ -828,79 +819,63 @@ def option_4(api, console):
                 if trade.from_address == target_wallet:
                     continue
                 
-                # Check if the trade occurred within 30 seconds after the target's trade
+                # Check timing relative to target's trade
                 time_diff = trade.block_time - target_time
-                if 0 < time_diff <= 30:
-                    # Record this as a potential copy trade
-                    if trade.from_address not in copy_traders:
-                        copy_traders[trade.from_address] = {'count': 0, 'tokens': set(), 'delays': []}
-                    
-                    copy_traders[trade.from_address]['count'] += 1
-                    copy_traders[trade.from_address]['tokens'].add(token)
-                    copy_traders[trade.from_address]['delays'].append(time_diff)
+                
+                # Initialize wallet data if not seen before
+                if trade.from_address not in wallets:
+                    wallets[trade.from_address] = {'before': set(), 'after': set()}
+                
+                # Add token to the appropriate set based on timing
+                if -30 <= time_diff < 0:  # Bought before target (within 30 seconds)
+                    wallets[trade.from_address]['before'].add(token)
+                elif 0 < time_diff <= 30:  # Bought after target (within 30 seconds)
+                    wallets[trade.from_address]['after'].add(token)
     
-    # Filter out wallets that only copied once
-    copy_traders = {k: v for k, v in copy_traders.items() if v['count'] > 1}
+    # Filter out wallets that don't have at least 2 before OR 2 after trades
+    wallets = {k: v for k, v in wallets.items() if len(v['before']) >= 2 or len(v['after']) >= 2}
     
-    if not copy_traders:
-        console.print("[yellow]No potential copy traders found[/yellow]")
+    if not wallets:
+        console.print("[yellow]No wallets found with at least 2 trades before or after within the 30-second window[/yellow]")
         return
     
-    # Sort by copy count (descending)
-    sorted_copy_traders = sorted(copy_traders.items(), key=lambda x: x[1]['count'], reverse=True)
+    # Sort first by "before" count, then by "after" count (both descending)
+    sorted_wallets = sorted(
+        wallets.items(), 
+        key=lambda x: (len(x[1]['before']), len(x[1]['after'])), 
+        reverse=True
+    )
     
     # Add rows to the table
-    for wallet, data in sorted_copy_traders:
-        avg_delay = sum(data['delays']) / len(data['delays'])
-        tokens_str = f"{len(data['tokens'])} unique tokens"
+    for wallet, data in sorted_wallets:
+        before_count = len(data['before'])
+        after_count = len(data['after'])
         
-        copy_traders_table.add_row(
+        wallets_table.add_row(
             wallet,
-            str(data['count']),
-            tokens_str,
-            f"{avg_delay:.2f}"
+            str(before_count),
+            str(after_count)
         )
     
-    console.print(copy_traders_table)
+    console.print(wallets_table)
     
-    # Save results to CSV
-    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
-    csv_filename = f'reports/copy_traders_{target_wallet}_{timestamp}.csv'
-    
-    with open(csv_filename, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['Wallet Address', 'Copy Count', 'Unique Tokens', 'Average Delay (s)'])
-        
-        for wallet, data in sorted_copy_traders:
-            avg_delay = sum(data['delays']) / len(data['delays'])
-            writer.writerow([
-                wallet,
-                data['count'],
-                len(data['tokens']),
-                f"{avg_delay:.2f}"
-            ])
-    
-    console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
-
     # Save results to CSV
     # Create directory for this wallet address
     wallet_dir = f'reports/{target_wallet}'
     os.makedirs(wallet_dir, exist_ok=True)
     
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
-    csv_filename = f'{wallet_dir}/copy_traders_{timestamp}.csv'
+    csv_filename = f'{wallet_dir}/same_token_traders_{timestamp}.csv'
     
     with open(csv_filename, 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['Wallet Address', 'Copy Count', 'Unique Tokens', 'Average Delay (s)'])
+        writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After'])
         
-        for wallet, data in sorted_copy_traders:
-            avg_delay = sum(data['delays']) / len(data['delays'])
+        for wallet, data in sorted_wallets:
             writer.writerow([
                 wallet,
-                data['count'],
-                len(data['tokens']),
-                f"{avg_delay:.2f}"
+                len(data['before']),
+                len(data['after'])
             ])
     
     console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
@@ -1182,7 +1157,8 @@ def option_8(api, console):
     console.print(heatmap_table)
     
     # Display summary statistics
-    most_active_day_idx = [sum(row) for row in activity_grid].index(max([sum(row) for row in activity_grid]))
+    day_totals = [sum(row) for row in activity_grid]
+    most_active_day_idx = day_totals.index(max(day_totals))
     most_active_day = days_of_week[most_active_day_idx]
     
     most_active_hour = hour_totals.index(max(hour_totals))
