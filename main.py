@@ -832,17 +832,17 @@ def option_4(api, console):
                 elif 0 < time_diff <= 30:  # Bought after target (within 30 seconds)
                     wallets[trade.from_address]['after'].add(token)
     
-    # Filter out wallets that don't have at least 2 before OR 2 after trades
-    wallets = {k: v for k, v in wallets.items() if len(v['before']) >= 2 or len(v['after']) >= 2}
+    # Filter out wallets with no matches
+    wallets = {k: v for k, v in wallets.items() if v['before'] or v['after']}
     
     if not wallets:
-        console.print("[yellow]No wallets found with at least 2 trades before or after within the 30-second window[/yellow]")
+        console.print("[yellow]No wallets found trading the same tokens within the 30-second window[/yellow]")
         return
     
-    # Sort first by "before" count, then by "after" count (both descending)
+    # Sort by total count (before + after), then by after count, then by before count
     sorted_wallets = sorted(
         wallets.items(), 
-        key=lambda x: (len(x[1]['before']), len(x[1]['after'])), 
+        key=lambda x: (len(x[1]['before']) + len(x[1]['after']), len(x[1]['after']), len(x[1]['before'])), 
         reverse=True
     )
     
