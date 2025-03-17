@@ -219,7 +219,7 @@ class SolscanAPI:
 
     def get_dex_trading_history(self, address: str, time_filter: dict = None, quiet: bool = False) -> List[SolscanDefiActivity]:
         """
-        Get complete DEX trading history for an account, up to 1 month old.
+        Get complete DEX trading history for an account, up to 60 days old.
         Uses cached transactions from CSV if available and only fetches new transactions.
         
         Args:
@@ -253,7 +253,7 @@ class SolscanAPI:
 
         page = 1
         page_size = 100
-        one_month_ago = datetime.now().timestamp() - (30 * 86400)  # 30 days in seconds
+        sixty_days_ago = datetime.now().timestamp() - (60 * 86400)  # 60 days in seconds
         found_cached = False
         
         # Unpack time filter parameters if provided
@@ -290,7 +290,7 @@ class SolscanAPI:
                         # (continue looking as newer transactions might be within window)
                         continue
                         
-                if trade['block_time'] < one_month_ago:
+                if trade['block_time'] < sixty_days_ago:
                     found_cached = True
                     break
 
@@ -562,7 +562,8 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
     period_stats = {
         '24h': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 86400},
         '7d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 7 * 86400},
-        '30d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 30 * 86400}
+        '30d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 30 * 86400},
+        '60d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 60 * 86400}
     }
 
     # First pass: collect all trades and update period stats
@@ -917,20 +918,21 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
     periods = {
         '24h': {'seconds': 24 * 60 * 60, 'invested': 0, 'received': 0, 'profit': 0, 'roi_percent': None, 'fees': 0},
         '7d': {'seconds': 7 * 24 * 60 * 60, 'invested': 0, 'received': 0, 'profit': 0, 'roi_percent': None, 'fees': 0},
-        '30d': {'seconds': 30 * 24 * 60 * 60, 'invested': 0, 'received': 0, 'profit': 0, 'roi_percent': None, 'fees': 0}
+        '30d': {'seconds': 30 * 24 * 60 * 60, 'invested': 0, 'received': 0, 'profit': 0, 'roi_percent': None, 'fees': 0},
+        '60d': {'seconds': 60 * 24 * 60 * 60, 'invested': 0, 'received': 0, 'profit': 0, 'roi_percent': None, 'fees': 0}
     }
 
     # Calculate period metrics
     for token, stats in token_stats.items():
         for period_name, period_data in periods.items():
             period_start = current_time - period_data['seconds']
-            if stats['last_trade'] >= period_start:
+            if stats['last_trade'] and stats['last_trade'].timestamp() >= period_start:
                 period_data['invested'] += stats['sol_invested']
                 period_data['received'] += stats['sol_received']
                 period_data['fees'] += stats['total_fees']
                 # Calculate profit after fees
                 period_profit = stats['sol_received'] - stats['sol_invested'] - stats['total_fees']
-                if stats['remaining_value'] > 0:
+                if stats.get('remaining_value', 0) > 0:
                     period_profit += stats['remaining_value']
                 period_data['profit'] += period_profit
 
@@ -948,7 +950,11 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
     roi_table.add_column("Profit", justify="right", style="green")
     roi_table.add_column("ROI %", justify="right", style="magenta")
 
-    for period, data in periods.items():
+    # Define order of periods to display
+    period_order = ['60d', '30d', '7d', '24h']
+
+    for period in period_order:
+        data = periods[period]
         if data['invested'] > 0:
             profit_color = "green" if data['profit'] >= 0 else "red"
             roi_color = "green" if data['roi_percent'] >= 0 else "red"
@@ -967,7 +973,7 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
                 "0.000 ◎",
                 "N/A"
             )
-    
+
     console.print(roi_table)
 
     # Count transactions
@@ -1285,7 +1291,8 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
     period_stats = {
         '24h': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 86400},
         '7d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 7 * 86400},
-        '30d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 30 * 86400}
+        '30d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 30 * 86400},
+        '60d': {'invested': 0, 'received': 0, 'start_time': datetime.now().timestamp() - 60 * 86400}
     }
 
     # First pass: collect all trades and update period stats
@@ -1535,8 +1542,8 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
 
     # Prepare ROI data
     roi_data = {}
-    period_remaining_value = {'24h': 0, '7d': 0, '30d': 0}
-    period_fees = {'24h': 0, '7d': 0, '30d': 0}  # Track fees for each period
+    period_remaining_value = {'24h': 0, '7d': 0, '30d': 0, '60d': 0}
+    period_fees = {'24h': 0, '7d': 0, '30d': 0, '60d': 0}  # Track fees for each period
     
     # Calculate remaining value and fees for each period
     for token, stats in token_stats.items():
@@ -1561,6 +1568,9 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
             if last_trade_time >= current_time_ts - 30 * 86400:  # 30d
                 period_remaining_value['30d'] += remaining_value
                 period_fees['30d'] += stats['total_fees']
+            if last_trade_time >= current_time_ts - 60 * 86400:  # 60d
+                period_remaining_value['60d'] += remaining_value
+                period_fees['60d'] += stats['total_fees']
 
     for period, stats in period_stats.items():
         invested = stats.get('invested', 0)

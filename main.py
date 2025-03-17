@@ -428,7 +428,7 @@ def option_3(api, console):
     roi_table.add_column("Profit/Loss", justify="right", style="green")
     roi_table.add_column("ROI %", justify="right", style="magenta")
 
-    for period in ['24h', '7d', '30d']:
+    for period in ['24h', '7d', '30d', '60d']:
         period_data = roi_data[period]
         profit_color = "green" if period_data['profit'] >= 0 else "red"
         roi_color = "green" if period_data['roi_percent'] and period_data['roi_percent'] >= 0 else "red"
@@ -482,9 +482,9 @@ def option_3(api, console):
     
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     if aggregate_mode and len(addresses) > 1:
-        csv_filename = f'reports/aggregate-balance-{timestamp}.csv'
+        csv_filename = f'reports/aggregate-dex-trades-{timestamp}.csv'
     else:
-        csv_filename = f'{wallet_dir}/balance-{timestamp}.csv'
+        csv_filename = f'{wallet_dir}/dex-trades-{timestamp}.csv'
 
     # Save to CSV
     with open(csv_filename, 'w') as f:
@@ -565,7 +565,8 @@ def option_5(api, console):
     summary_table.add_column("24H ROI %", justify="right", style="magenta")
     summary_table.add_column("7D ROI %", justify="right", style="magenta")
     summary_table.add_column("30D ROI %", justify="right", style="magenta")
-    summary_table.add_column("30D ROI", justify="right", style="yellow")
+    summary_table.add_column("60D ROI %", justify="right", style="magenta")
+    summary_table.add_column("60D ROI", justify="right", style="yellow")
     summary_table.add_column("Total Fees", justify="right", style="red")
     summary_table.add_column("Win Rate", justify="right", style="green")
     summary_table.add_column("Med Investment", justify="right", style="green")
@@ -609,7 +610,8 @@ def option_5(api, console):
             "24H ROI %": f"{roi_data['24h']['roi_percent']:.2f}" if roi_data['24h']['roi_percent'] is not None else "N/A",
             "7D ROI %": f"{roi_data['7d']['roi_percent']:.2f}" if roi_data['7d']['roi_percent'] is not None else "N/A",
             "30D ROI %": f"{roi_data['30d']['roi_percent']:.2f}" if roi_data['30d']['roi_percent'] is not None else "N/A",
-            "30D ROI": f"{roi_data['30d']['profit']:.3f}",  # Already includes fees
+            "60D ROI %": f"{roi_data['60d']['roi_percent']:.2f}" if roi_data['60d']['roi_percent'] is not None else "N/A",
+            "60D ROI": f"{roi_data['60d']['profit']:.3f}",  # Already includes fees
             "Total Fees": f"{total_fees:.3f}",
             "Buy Fees": f"{total_buy_fees:.3f}",
             "Sell Fees": f"{total_sell_fees:.3f}",
@@ -631,18 +633,21 @@ def option_5(api, console):
         roi_24h = roi_data['24h']['roi_percent']  # Already includes fees
         roi_7d = roi_data['7d']['roi_percent']    # Already includes fees
         roi_30d = roi_data['30d']['roi_percent']  # Already includes fees
+        roi_60d = roi_data['60d']['roi_percent']  # Already includes fees
         
         # Color ROIs based on profit/loss (after fees)
         roi_24h_color = "green" if roi_24h and roi_24h > 0 else "red"
         roi_7d_color = "green" if roi_7d and roi_7d > 0 else "red"
         roi_30d_color = "green" if roi_30d and roi_30d > 0 else "red"
+        roi_60d_color = "green" if roi_60d and roi_60d > 0 else "red"
         
         summary_table.add_row(
             addr,
             f"[{roi_24h_color}]{roi_24h:+.2f}%[/{roi_24h_color}]" if roi_24h is not None else "N/A",
             f"[{roi_7d_color}]{roi_7d:+.2f}%[/{roi_7d_color}]" if roi_7d is not None else "N/A",
             f"[{roi_30d_color}]{roi_30d:+.2f}%[/{roi_30d_color}]" if roi_30d is not None else "N/A",
-            f"{roi_data['30d']['profit']:.3f} SOL",  # Already includes fees
+            f"[{roi_60d_color}]{roi_60d:+.2f}%[/{roi_60d_color}]" if roi_60d is not None else "N/A",
+            f"{roi_data['60d']['profit']:.3f} SOL",  # Already includes fees
             f"[red]{total_fees:.3f} ◎[/red]",
             f"[{win_rate_color}]{tx_summary['win_rate']:.1f}% ({tx_summary['win_rate_ratio']})[/{win_rate_color}]",
             f"{tx_summary['median_investment']:.3f} ◎",
