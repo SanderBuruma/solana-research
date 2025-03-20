@@ -67,6 +67,7 @@ class SolscanDefiActivity:
     Attributes:
         transaction_id (str): Unique identifier of the transaction
         block_time (float): UNIX timestamp of the block when the transaction occurred
+        block_id (int): Block ID/slot number for the transaction
         token1 (str): Address of the first token in the swap
         token2 (str): Address of the second token in the swap
         token1_decimals (int): Number of decimals for the first token
@@ -89,6 +90,7 @@ class SolscanDefiActivity:
         """
         self.transaction_id = trade.get('trans_id', '')
         self.block_time = trade.get('block_time', 0)
+        self.block_id = trade.get('slot', 0)  # Store block ID/slot
         
         # Extract amount_info data
         amount_info = trade.get('amount_info', {})
@@ -231,14 +233,63 @@ class SolscanAPI:
             quiet: If True, suppresses progress bar display (useful when called from other functions with their own status displays)
         
         Returns:
-            List[SolscanDefiActivity]: List of trading activities
+            List[SolscanDefiActivity]: List of trading activities sorted by timestamp (newest first)
         """
         # Create directory for this wallet address
-        wallet_dir = f'reports/{address}'
+        wallet_dir = f'./dex_activity/{address}'
         os.makedirs(wallet_dir, exist_ok=True)
         csv_filename = f'{wallet_dir}/transactions.csv'
         cached_trades = {}
         all_trades = []
+        
+        # Load existing transactions from CSV if available
+        latest_cached_timestamp = 0
+        if os.path.exists(csv_filename):
+            try:
+                with open(csv_filename, 'r') as f:
+                    reader = csv.DictReader(f)
+                    # Convert CSV data back to SolscanDefiActivity objects
+                    for row in reader:
+                        # Skip rows without required fields
+                        if not all(key in row for key in ['trans_id', 'block_time', 'token1', 'token2']):
+                            continue
+                            
+                        # Convert the CSV data back to a dict format for SolscanDefiActivity
+                        trade = {
+                            'trans_id': row['trans_id'],
+                            'block_time': float(row['block_time']),
+                            'amount_info': {
+                                'token1': row['token1'],
+                                'token2': row['token2'],
+                                'token1_decimals': int(row['token1_decimals']),
+                                'token2_decimals': int(row['token2_decimals']),
+                                'amount1': float(row['amount1']),
+                                'amount2': float(row['amount2'])
+                            },
+                            'price_usdt': float(row.get('price_usdt', 0)),
+                            'decimals': int(row.get('decimals', 0)),
+                            'name': row.get('name', ''),
+                            'symbol': row.get('symbol', ''),
+                            'flow': row.get('flow', ''),
+                            'value': float(row.get('value', 0)),
+                            'from_address': row.get('from_address', '')
+                        }
+                        
+                        # Add block_id/slot if available
+                        if 'block_id' in row:
+                            trade['slot'] = int(row['block_id'])
+                        
+                        # Add to cached trades
+                        cached_trades[row['trans_id']] = trade
+                        all_trades.append(SolscanDefiActivity(trade))
+                        
+                        # Track latest timestamp from cached data
+                        latest_cached_timestamp = max(latest_cached_timestamp, float(row['block_time']))
+                
+                if not quiet:
+                    self.console.print(f"[green]Loaded {len(cached_trades)} cached transactions[/green]")
+            except Exception as e:
+                self.console.print(f"[yellow]Error loading cached transactions: {str(e)}[/yellow]")
 
         # Get total number of transactions
         endpoint = f'account/activity/dextrading/total?address={address}'
@@ -248,13 +299,14 @@ class SolscanAPI:
             total_trades = 10100
         
         if total_trades == 0:
-            # Sort all trades by block_time
-            return sorted(all_trades, key=lambda x: x.block_time)
+            # Sort all trades by block_time, newest first
+            return sorted(all_trades, key=lambda x: x.block_time, reverse=True)
 
         page = 1
         page_size = 100
         sixty_days_ago = datetime.now().timestamp() - (60 * 86400)  # 60 days in seconds
         found_cached = False
+        new_trades_count = 0
         
         # Unpack time filter parameters if provided
         reference_time = None
@@ -268,7 +320,7 @@ class SolscanAPI:
         
         # Function to process data from a page of trades
         def process_page_data(trades_data):
-            nonlocal found_cached, all_trades, cached_trades
+            nonlocal found_cached, all_trades, cached_trades, new_trades_count
             
             # Track if we've exceeded the time window for time-filtered queries
             exceeded_time_window = False
@@ -289,12 +341,22 @@ class SolscanAPI:
                         # If we find a trade more than window seconds before, we've gone too far
                         # (continue looking as newer transactions might be within window)
                         continue
+                
+                trans_id = trade.get('trans_id')
+                
+                # Skip if we've already seen this transaction
+                if trans_id in cached_trades:
+                    found_cached = True
+                    continue
+                
+                # Skip transactions older than what we already have (unless we're filtering)
+                if trade['block_time'] <= latest_cached_timestamp and not time_filter:
+                    found_cached = True
+                    continue
                         
                 if trade['block_time'] < sixty_days_ago:
                     found_cached = True
                     break
-
-                trans_id = trade.get('trans_id')
 
                 if not is_sol_token(trade.get('amount_info', {}).get('token1')) and not is_sol_token(trade.get('amount_info', {}).get('token2')):
                     continue
@@ -317,6 +379,7 @@ class SolscanAPI:
                         
                 all_trades.append(SolscanDefiActivity(trade))
                 cached_trades[trans_id] = trade
+                new_trades_count += 1
                 
             return exceeded_time_window
         
@@ -381,12 +444,53 @@ class SolscanAPI:
                         
                     page += 1
                 
-                progress.update(task, completed=len(all_trades))
+                progress.update(task, completed=new_trades_count)
 
-        # Sort all trades by block_time and prioritize token buys when timestamps match
-        all_trades.sort(key=lambda x: (x.block_time, not is_sol_token(x.token1)))
+        # Save new trades to CSV if we found any
+        if new_trades_count > 0:
+            try:
+                # Prepare to write to CSV (create a new file or append)
+                write_header = not os.path.exists(csv_filename)
+                
+                with open(csv_filename, 'w' if write_header else 'a', newline='') as f:
+                    fieldnames = ['trans_id', 'block_time', 'block_id', 'token1', 'token2', 'token1_decimals', 
+                                'token2_decimals', 'amount1', 'amount2', 'price_usdt', 'decimals', 
+                                'name', 'symbol', 'flow', 'value', 'from_address']
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    
+                    if write_header:
+                        writer.writeheader()
+                    
+                    # Only write new trades (that haven't been saved yet)
+                    for trade_id, trade in cached_trades.items():
+                        # Convert SolscanDefiActivity to CSV row format
+                        row = {
+                            'trans_id': trade.get('trans_id', ''),
+                            'block_time': trade.get('block_time', 0),
+                            'block_id': trade.get('slot', 0),  # Save block_id field
+                            'token1': trade.get('amount_info', {}).get('token1', ''),
+                            'token2': trade.get('amount_info', {}).get('token2', ''),
+                            'token1_decimals': trade.get('amount_info', {}).get('token1_decimals', 0),
+                            'token2_decimals': trade.get('amount_info', {}).get('token2_decimals', 0),
+                            'amount1': trade.get('amount_info', {}).get('amount1', 0),
+                            'amount2': trade.get('amount_info', {}).get('amount2', 0),
+                            'price_usdt': trade.get('price_usdt', 0),
+                            'decimals': trade.get('decimals', 0),
+                            'name': trade.get('name', ''),
+                            'symbol': trade.get('symbol', ''),
+                            'flow': trade.get('flow', ''),
+                            'value': trade.get('value', 0),
+                            'from_address': trade.get('from_address', '')
+                        }
+                        writer.writerow(row)
+                
+                if not quiet:
+                    self.console.print(f"[green]Saved {new_trades_count} new transactions to {csv_filename}[/green]")
+            except Exception as e:
+                self.console.print(f"[red]Error saving transactions to CSV: {str(e)}[/red]")
 
-        return all_trades
+        # Sort all trades by block_time (newest first) and return
+        return sorted(all_trades, key=lambda x: x.block_time, reverse=True)
 
     def get_token_price(self, token_address: str) -> Optional[Dict[str, Any]]:
         """
@@ -1314,27 +1418,51 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         if not is_sol_token(token1) and not is_sol_token(token2):
             continue
 
-        # Initialize stats for tokens found in sell transactions
-        if is_sol_token(token2) and token1 not in token_stats:
-            token_stats[token1] = {
-                'sol_invested': 0,
-                'sol_received': 0,
-                'tokens_tally': 0, # This might go negative, which is now allowed
-                'tokens_bought': 0,
-                'tokens_sold': 0,
-                'last_trade': None,
-                'first_trade': datetime.fromtimestamp(trade.block_time),
-                'last_sol_rate': 0,
-                'token_price_usdt': 0,
-                'decimals': 0,
-                'name': '',
-                'symbol': '',
-                'hold_time': None,
-                'trade_count': 0,
-                'buy_fees': 0,
-                'sell_fees': 0,
-                'total_fees': 0
-            }
+        # Initialize stats for tokens found in sells or buys
+        if (is_sol_token(token2) and token1 not in token_stats) or (is_sol_token(token1) and token2 not in token_stats):
+            # For token1 (sell case)
+            if is_sol_token(token2) and token1 not in token_stats:
+                token_stats[token1] = {
+                    'sol_invested': 0,
+                    'sol_received': 0,
+                    'tokens_tally': 0, # This might go negative, which is now allowed
+                    'tokens_bought': 0,
+                    'tokens_sold': 0,
+                    'last_trade': None,
+                    'first_trade': None,  # Will be set properly below
+                    'last_sol_rate': 0,
+                    'token_price_usdt': 0,
+                    'decimals': 0,
+                    'name': '',
+                    'symbol': '',
+                    'hold_time': None,
+                    'trade_count': 0,
+                    'buy_fees': 0,
+                    'sell_fees': 0,
+                    'total_fees': 0
+                }
+            
+            # For token2 (buy case)
+            if is_sol_token(token1) and token2 not in token_stats:
+                token_stats[token2] = {
+                    'sol_invested': 0,
+                    'sol_received': 0,
+                    'tokens_tally': 0,
+                    'tokens_bought': 0,
+                    'tokens_sold': 0,
+                    'last_trade': None,
+                    'first_trade': None,  # Will be set properly below
+                    'last_sol_rate': 0,
+                    'token_price_usdt': 0,
+                    'decimals': 0,
+                    'name': '',
+                    'symbol': '',
+                    'hold_time': None,
+                    'trade_count': 0,
+                    'buy_fees': 0,
+                    'sell_fees': 0,
+                    'total_fees': 0
+                }
         
         try:
             amount1_raw = trade.amount1
@@ -1350,33 +1478,25 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         trade_time = datetime.fromtimestamp(trade.block_time)
         trade_timestamp = trade.block_time
         
-        # Initialize token stats if needed
-        if not is_sol_token(token2) and token2 not in token_stats:
-            token_stats[token2] = {
-                'sol_invested': 0,
-                'sol_received': 0,
-                'tokens_tally': 0,
-                'tokens_bought': 0,
-                'tokens_sold': 0,
-                'last_trade': None,
-                'first_trade': datetime.fromtimestamp(trade.block_time),  # Convert to datetime
-                'last_sol_rate': 0,
-                'token_price_usdt': 0,
-                'decimals': 0,
-                'name': '',
-                'symbol': '',
-                'hold_time': None,
-                'trade_count': 0,
-                'buy_fees': 0,  # Track buy fees
-                'sell_fees': 0,  # Track sell fees
-                'total_fees': 0  # Track total fees
-            }
-
-        # Update token stats
+        # Update token stats timestamps
         if is_sol_token(token1):
-            token_stats[token2]['last_trade'] = trade_time
+            # Buying token2 with SOL
+            # Update last_trade
+            if token_stats[token2]['last_trade'] is None or trade_time > token_stats[token2]['last_trade']:
+                token_stats[token2]['last_trade'] = trade_time
+            
+            # Update first_trade
+            if token_stats[token2]['first_trade'] is None or trade_time < token_stats[token2]['first_trade']:
+                token_stats[token2]['first_trade'] = trade_time
         else:
-            token_stats[token1]['last_trade'] = trade_time
+            # Selling token1 for SOL
+            # Update last_trade
+            if token_stats[token1]['last_trade'] is None or trade_time > token_stats[token1]['last_trade']:
+                token_stats[token1]['last_trade'] = trade_time
+            
+            # Update first_trade
+            if token_stats[token1]['first_trade'] is None or trade_time < token_stats[token1]['first_trade']:
+                token_stats[token1]['first_trade'] = trade_time
 
         if is_sol_token(token1) and not is_sol_token(token2):
             # Buying tokens with SOL
@@ -1506,7 +1626,12 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
             if remaining_tokens > 0:
                 stats['last_trade'] = current_time
             if stats['last_trade']:
-                duration = stats['last_trade'] - stats['first_trade']
+                # Ensure first_trade is earlier than last_trade
+                first = stats['first_trade']
+                last = stats['last_trade']
+                if first > last:
+                    first, last = last, first
+                duration = last - first
                 stats['hold_time'] = duration
                 hold_times.append(duration)
         
