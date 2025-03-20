@@ -267,15 +267,13 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
     def test_real_wallet_fetch(self):
         """Integration test with a real wallet (limited to minimize API calls)"""
         # This test will be slow and actually call the API
-        # It's disabled by default to avoid excessive API calls during regular testing
-        if os.environ.get('RUN_INTEGRATION_TESTS') != 'true':
-            self.skipTest("Skipping integration test - set RUN_INTEGRATION_TESTS=true to run")
             
         # Fetch a small number of trades (limited to 5 for testing)
+        # Save the original method BEFORE patching
+        original_make_request = self.api._make_request
+        
         with patch.object(self.api, '_make_request') as mock_request:
-            # Allow the first few calls to go through to the real API
-            original_make_request = self.api._make_request
-            
+            # Define the limited request function using the saved original
             def limited_make_request(endpoint):
                 if 'page=' in endpoint and 'page=1' not in endpoint:
                     # Only allow page 1 to reduce API load during testing
