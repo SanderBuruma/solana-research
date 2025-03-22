@@ -820,7 +820,7 @@ def option_4(api, console):
                 recent_buys[token] = trade
 
         # Reduce recent buys to 10 most recent trades
-        recent_buys = dict(list(recent_buys.items())[:10])
+        recent_buys = dict(list(recent_buys.items())[:50])
         
         console.print(f"Analyzing [green]{len(recent_buys)}[/green] unique token buys")
         
@@ -837,12 +837,21 @@ def option_4(api, console):
                 token_name = token[:5] + "..." + token[-5:]
                 target_time = target_trade.block_time
                 
-                status.update(f"[bold green]Scanning transactions for token {token_name}...[/bold green]")
+                status.update(f"[bold green]Scanning transactions for token {token_name} (±30s window)...[/bold green]")
                 
-                # Get all trades for this token (without time filtering to get both before and after)
-                token_trades = api.get_dex_trading_history(token, quiet=True)
+                # Calculate the time window: 30 seconds before and after the target trade
+                from_time = target_time - 30  # 30 seconds before target's trade
+                to_time = target_time + 30    # 30 seconds after target's trade
                 
-                # Find trades within 30 seconds before and after the target's trade
+                # Get trades only within the time window using timestamp filtering
+                token_trades = api.get_dex_trading_history(
+                    token, 
+                    quiet=True,
+                    from_time=from_time,
+                    to_time=to_time
+                )
+                
+                # Find trades within the time window
                 for trade in token_trades:
                     # Skip if it's not a buy (SOL -> token)
                     if not is_sol_token(trade.token1) or is_sol_token(trade.token2):
@@ -922,7 +931,7 @@ def option_7(api, console):
     Detect wallets that the target wallet might be copy trading from
     
     Steps:
-    1. Get the first 10 token buys for the target wallet
+    1. Get the first 50 token buys for the target wallet
     2. For each token, get all trades and find wallets that bought within 30 seconds BEFORE the target
        (uses optimized time-filtered search to reduce API calls)
     3. Track wallets that show up multiple times (suggesting the target is copy trading them)
@@ -1012,17 +1021,21 @@ def option_7(api, console):
             token_name = token[:5] + "..." + token[-5:]
             target_time = target_trade.block_time
             
-            status.update(f"[bold green]Scanning transactions for token {token_name}...[/bold green]")
+            status.update(f"[bold green]Scanning transactions for token {token_name} (30s window before target trade)...[/bold green]")
             
-            # Get all trades for this token with time filtering (only trades before target's trade)
-            time_filter = {
-                'reference_time': target_time,
-                'direction': 'before',
-                'window': 30
-            }
-            token_trades = api.get_dex_trading_history(token, time_filter, quiet=True, defi_days=defi_days)
+            # Calculate the time window: 30 seconds before and after the target trade
+            from_time = target_time - 30  # 30 seconds before target's trade
+            to_time = target_time + 30    # 30 seconds after target's trade
             
-            # Find trades within 30 seconds BEFORE the target's trade
+            # Get trades only within the time window using timestamp filtering
+            token_trades = api.get_dex_trading_history(
+                token, 
+                quiet=True,
+                from_time=from_time,
+                to_time=to_time
+            )
+            
+            # Find trades within the time window
             for trade in token_trades:
                 # Skip if it's not a buy (SOL -> token)
                 if not is_sol_token(trade.token1) or is_sol_token(trade.token2):
@@ -1032,16 +1045,18 @@ def option_7(api, console):
                 if trade.from_address == target_wallet:
                     continue
                 
-                # Check if the trade occurred within 30 seconds BEFORE the target's trade
-                time_diff = target_time - trade.block_time
-                if 0 < time_diff <= 30:
-                    # Record this as a potential source trade
-                    if trade.from_address not in copy_sources:
-                        copy_sources[trade.from_address] = {'count': 0, 'tokens': set(), 'delays': []}
-                    
+                # Check timing relative to target's trade
+                time_diff = trade.block_time - target_time
+                
+                # Initialize wallet data if not seen before
+                if trade.from_address not in copy_sources:
+                    copy_sources[trade.from_address] = {'count': 0, 'tokens': set(), 'delays': []}
+                
+                # Add token to the appropriate set based on timing
+                if -30 <= time_diff < 0:  # Bought before target (within 30 seconds)
                     copy_sources[trade.from_address]['count'] += 1
                     copy_sources[trade.from_address]['tokens'].add(token)
-                    copy_sources[trade.from_address]['delays'].append(time_diff)
+                    copy_sources[trade.from_address]['delays'].append(-time_diff)  # Convert to positive delay
     
     # Filter out wallets that only appeared once
     copy_sources = {k: v for k, v in copy_sources.items() if v['count'] > 1}

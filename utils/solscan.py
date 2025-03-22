@@ -248,6 +248,21 @@ class SolscanAPI:
             os.makedirs(wallet_dir, exist_ok=True)
             csv_filename = f'{wallet_dir}/transactions.csv'
         
+        # Show timestamp filtering info if applicable
+        if not quiet and skip_csv:
+            time_window_seconds = None
+            if from_time is not None and to_time is not None:
+                time_window_seconds = to_time - from_time
+                
+            # Determine if this is a narrow time window (useful for copy trading detection)
+            is_narrow_window = time_window_seconds is not None and time_window_seconds <= 60
+            
+            time_filter_msg = "[yellow]Using timestamp filtering"
+            if is_narrow_window:
+                time_filter_msg += f" (narrow {time_window_seconds}s window)"
+            time_filter_msg += "[/yellow]"
+            self.console.print(time_filter_msg)
+
         cached_trades = {}
         all_trades = []
         
