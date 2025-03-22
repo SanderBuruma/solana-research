@@ -91,7 +91,7 @@ def print_usage():
         console.print("-2 <address>     View Transaction History")
         console.print("-3 <address>     View Balance History")
         console.print("   --defi_days=<n>    Filter transactions to the last n days")
-        console.print("-4 <address>     Detect Copy Traders")
+        console.print("-4 <address1> [address2] [address3] ...     Detect Copy Traders")
         console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-5 <address>     View DeFi Summary for Wallets")
         console.print("   --days=<n>    Filter tokens first bought within the last n days")
@@ -107,6 +107,7 @@ def print_usage():
         console.print("python main.py -3 <address>")
         console.print("python main.py -3 <address> --defi_days=7")
         console.print("python main.py -4 <address>")
+        console.print("python main.py -4 <address1> <address2> <address3>")
         console.print("python main.py -4 <address> --defi_days=7")
         console.print("python main.py -5 <address1> <address2> <address3>")
         console.print("python main.py -5 <address> --days=7")
@@ -125,7 +126,7 @@ def print_usage():
         console.print("-2 <address>     View Transaction History")
         console.print("-3 <address>     View Balance History")
         console.print("   --defi_days=<n>    Filter transactions to the last n days")
-        console.print("-4 <address>     Detect Copy Traders")
+        console.print("-4 <address1> [address2] [address3] ...     Detect Copy Traders")
         console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-5 <address>     View DeFi Summary for Wallets")
         console.print("   --days=<n>    Filter tokens first bought within the last n days")
@@ -135,21 +136,6 @@ def print_usage():
         console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-8 <address>     Generate Activity Heatmap by Day/Hour")
         console.print("   --defi_days=<n>    Filter transactions to the last n days")
-        console.print("\n[bold]Examples:[/bold]")
-        console.print("python main.py -1 <address>")
-        console.print("python main.py -2 <address>")
-        console.print("python main.py -3 <address>")
-        console.print("python main.py -3 <address> --defi_days=7")
-        console.print("python main.py -4 <address>")
-        console.print("python main.py -4 <address> --defi_days=7")
-        console.print("python main.py -5 <address1> <address2> <address3>")
-        console.print("python main.py -5 <address> --days=7")
-        console.print("python main.py -5 <address> --defi_days=7")
-        console.print("python main.py -5 <address> --days=7 --defi_days=30")
-        console.print("python main.py -7 <address>")
-        console.print("python main.py -7 <address> --defi_days=7")
-        console.print("python main.py -8 <address>")
-        console.print("python main.py -8 <address> --defi_days=7")
 
 def option_1(api, console):       
     if len(sys.argv) != 3:
@@ -826,9 +812,10 @@ def option_4(api, console):
     defi_days = None
     args = sys.argv[2:]  # Skip the program name and option flag
     
-    target_wallet = None
+    # Lists to store addresses and parameters
+    target_wallets = []
     
-    # Extract parameters
+    # Extract parameters and addresses
     i = 0
     while i < len(args):
         if args[i].startswith('--defi_days='):
@@ -839,147 +826,151 @@ def option_4(api, console):
                 console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
                 sys.exit(1)
         elif not args[i].startswith('--'):
-            # This is the target wallet address
-            target_wallet = args[i]
+            # This is a target wallet address
+            target_wallets.append(args[i])
         i += 1
     
-    if not target_wallet:
-        target_wallet = sys.argv[2]  # Fallback to first argument
+    # If no addresses found, use the first argument
+    if not target_wallets:
+        target_wallets = [sys.argv[2]]
     
-    # Create a table to display results
-    wallets_table = Table(title=f"Wallets Trading Same Tokens as {target_wallet}")
-    wallets_table.add_column("Wallet Address", style="cyan")
-    wallets_table.add_column("Before (≤30s)", justify="right", style="yellow")
-    wallets_table.add_column("After (≤30s)", justify="right", style="green")
-    
-    # Dictionary to track wallet stats
-    wallets = {}  # Structure: {wallet_address: {'before': set(), 'after': set()}}
-    
-    console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
-    trades = api.get_dex_trading_history(target_wallet, quiet=True, defi_days=defi_days)
-    
-    if not trades:
-        console.print("[red]No DEX trading history found for this wallet[/red]")
-        return
-    
-    console.print(f"Found [green]{len(trades)}[/green] DEX trades")
-    
-    # Get token buys (where target wallet bought a token using SOL)
-    target_buys = []  # List of (token, trade) tuples
-    for trade in trades:
-        # Check if this is a buy (SOL -> token)
-        if is_sol_token(trade.token1) and not is_sol_token(trade.token2):
-            token = trade.token2
-            target_buys.append((token, trade))
-    
-    # Sort by timestamp (newest first)
-    target_buys.sort(key=lambda x: x[1].block_time, reverse=True)
-
-    # Take unique tokens
-    seen_tokens = set()
-    recent_buys = {}  # {token_address: trade_data}
-    for token, trade in target_buys:
-        if token not in seen_tokens:
-            seen_tokens.add(token)
-            recent_buys[token] = trade
-
-    # Reduce recent buys to 10 most recent trades
-    recent_buys = dict(list(recent_buys.items())[:10])
-    
-    console.print(f"Analyzing [green]{len(recent_buys)}[/green] unique token buys")
-    
-    # Print token addresses being analyzed
-    console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
-    for i, token in enumerate(recent_buys.keys(), 1):
-        console.print(f"{i}. [cyan]{token}[/cyan]")
-    console.print("")
-    
-    # Track progress
-    with console.status("[bold green]Scanning for wallets trading same tokens...[/bold green]", spinner="dots") as status:
-        # For each token, find wallets that bought within 30 seconds before/after the target
-        for token, target_trade in recent_buys.items():
-            token_name = token[:5] + "..." + token[-5:]
-            target_time = target_trade.block_time
-            
-            status.update(f"[bold green]Scanning transactions for token {token_name}...[/bold green]")
-            
-            # Get all trades for this token (without time filtering to get both before and after)
-            token_trades = api.get_dex_trading_history(token, quiet=True)
-            
-            # Find trades within 30 seconds before and after the target's trade
-            for trade in token_trades:
-                # Skip if it's not a buy (SOL -> token)
-                if not is_sol_token(trade.token1) or is_sol_token(trade.token2):
-                    continue
-                    
-                # Skip if it's the target wallet
-                if trade.from_address == target_wallet:
-                    continue
-                
-                # Check timing relative to target's trade
-                time_diff = trade.block_time - target_time
-                
-                # Initialize wallet data if not seen before
-                if trade.from_address not in wallets:
-                    wallets[trade.from_address] = {'before': set(), 'after': set()}
-                
-                # Add token to the appropriate set based on timing
-                if -30 <= time_diff < 0:  # Bought before target (within 30 seconds)
-                    wallets[trade.from_address]['before'].add(token)
-                elif 0 < time_diff <= 30:  # Bought after target (within 30 seconds)
-                    wallets[trade.from_address]['after'].add(token)
-    
-    # Filter out wallets with no matches
-    wallets = {k: v for k, v in wallets.items() if v['before'] or v['after']}
-    
-    if not wallets:
-        console.print("[yellow]No wallets found trading the same tokens within the 30-second window[/yellow]")
-        return
-    
-    # Sort by total count (before + after), then by after count, then by before count
-    sorted_wallets = sorted(
-        wallets.items(), 
-        key=lambda x: (len(x[1]['before']) + len(x[1]['after']), len(x[1]['after']), len(x[1]['before'])), 
-        reverse=True
-    )
-    
-    # Add rows to the table
-    for wallet, data in sorted_wallets:
-        before_count = len(data['before'])
-        after_count = len(data['after'])
-
-        # if before_count and after_count is < 2, don't add to table
-        if before_count < 2 and after_count < 2:
+    # Process each wallet address
+    for target_wallet in target_wallets:
+        console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
+        
+        # Create a table to display results
+        wallets_table = Table(title=f"Wallets Trading Same Tokens as {target_wallet}")
+        wallets_table.add_column("Wallet Address", style="cyan")
+        wallets_table.add_column("Before (≤30s)", justify="right", style="yellow")
+        wallets_table.add_column("After (≤30s)", justify="right", style="green")
+        
+        # Dictionary to track wallet stats
+        wallets = {}  # Structure: {wallet_address: {'before': set(), 'after': set()}}
+        
+        trades = api.get_dex_trading_history(target_wallet, quiet=True, defi_days=defi_days)
+        
+        if not trades:
+            console.print("[red]No DEX trading history found for this wallet[/red]")
             continue
         
-        wallets_table.add_row(
-            wallet,
-            str(before_count),
-            str(after_count)
-        )
-    
-    console.print(wallets_table)
-    
-    # Save results to CSV
-    # Create directory for this wallet address
-    wallet_dir = f'reports/{target_wallet}'
-    os.makedirs(wallet_dir, exist_ok=True)
-    
-    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
-    csv_filename = f'{wallet_dir}/same_token_traders_{timestamp}.csv'
-    
-    with open(csv_filename, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After'])
+        console.print(f"Found [green]{len(trades)}[/green] DEX trades")
         
+        # Get token buys (where target wallet bought a token using SOL)
+        target_buys = []  # List of (token, trade) tuples
+        for trade in trades:
+            # Check if this is a buy (SOL -> token)
+            if is_sol_token(trade.token1) and not is_sol_token(trade.token2):
+                token = trade.token2
+                target_buys.append((token, trade))
+        
+        # Sort by timestamp (newest first)
+        target_buys.sort(key=lambda x: x[1].block_time, reverse=True)
+
+        # Take unique tokens
+        seen_tokens = set()
+        recent_buys = {}  # {token_address: trade_data}
+        for token, trade in target_buys:
+            if token not in seen_tokens:
+                seen_tokens.add(token)
+                recent_buys[token] = trade
+
+        # Reduce recent buys to 10 most recent trades
+        recent_buys = dict(list(recent_buys.items())[:10])
+        
+        console.print(f"Analyzing [green]{len(recent_buys)}[/green] unique token buys")
+        
+        # Print token addresses being analyzed
+        console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
+        for i, token in enumerate(recent_buys.keys(), 1):
+            console.print(f"{i}. [cyan]{token}[/cyan]")
+        console.print("")
+        
+        # Track progress
+        with console.status("[bold green]Scanning for wallets trading same tokens...[/bold green]", spinner="dots") as status:
+            # For each token, find wallets that bought within 30 seconds before/after the target
+            for token, target_trade in recent_buys.items():
+                token_name = token[:5] + "..." + token[-5:]
+                target_time = target_trade.block_time
+                
+                status.update(f"[bold green]Scanning transactions for token {token_name}...[/bold green]")
+                
+                # Get all trades for this token (without time filtering to get both before and after)
+                token_trades = api.get_dex_trading_history(token, quiet=True)
+                
+                # Find trades within 30 seconds before and after the target's trade
+                for trade in token_trades:
+                    # Skip if it's not a buy (SOL -> token)
+                    if not is_sol_token(trade.token1) or is_sol_token(trade.token2):
+                        continue
+                        
+                    # Skip if it's the target wallet
+                    if trade.from_address == target_wallet:
+                        continue
+                    
+                    # Check timing relative to target's trade
+                    time_diff = trade.block_time - target_time
+                    
+                    # Initialize wallet data if not seen before
+                    if trade.from_address not in wallets:
+                        wallets[trade.from_address] = {'before': set(), 'after': set()}
+                    
+                    # Add token to the appropriate set based on timing
+                    if -30 <= time_diff < 0:  # Bought before target (within 30 seconds)
+                        wallets[trade.from_address]['before'].add(token)
+                    elif 0 < time_diff <= 30:  # Bought after target (within 30 seconds)
+                        wallets[trade.from_address]['after'].add(token)
+        
+        # Filter out wallets with no matches
+        wallets = {k: v for k, v in wallets.items() if v['before'] or v['after']}
+        
+        if not wallets:
+            console.print("[yellow]No wallets found trading the same tokens within the 30-second window[/yellow]")
+            continue
+        
+        # Sort by total count (before + after), then by after count, then by before count
+        sorted_wallets = sorted(
+            wallets.items(), 
+            key=lambda x: (len(x[1]['before']) + len(x[1]['after']), len(x[1]['after']), len(x[1]['before'])), 
+            reverse=True
+        )
+        
+        # Add rows to the table
         for wallet, data in sorted_wallets:
-            writer.writerow([
+            before_count = len(data['before'])
+            after_count = len(data['after'])
+
+            # if before_count and after_count is < 2, don't add to table
+            if before_count < 2 and after_count < 2:
+                continue
+            
+            wallets_table.add_row(
                 wallet,
-                len(data['before']),
-                len(data['after'])
-            ])
-    
-    console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
+                str(before_count),
+                str(after_count)
+            )
+        
+        console.print(wallets_table)
+        
+        # Save results to CSV
+        # Create directory for this wallet address
+        wallet_dir = f'reports/{target_wallet}'
+        os.makedirs(wallet_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
+        csv_filename = f'{wallet_dir}/same_token_traders_{timestamp}.csv'
+        
+        with open(csv_filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After'])
+            
+            for wallet, data in sorted_wallets:
+                writer.writerow([
+                    wallet,
+                    len(data['before']),
+                    len(data['after'])
+                ])
+        
+        console.print(f"\n[yellow]Results for {target_wallet} saved to {csv_filename}[/yellow]")
 
 def option_7(api, console):
     """
