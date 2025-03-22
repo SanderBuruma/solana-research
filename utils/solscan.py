@@ -219,7 +219,7 @@ class SolscanAPI:
             return data.get('data', [])
         return None
 
-    def get_dex_trading_history(self, address: str, time_filter: dict = None, quiet: bool = False) -> List[SolscanDefiActivity]:
+    def get_dex_trading_history(self, address: str, time_filter: dict = None, quiet: bool = False, days: int = None, defi_days: int = None) -> List[SolscanDefiActivity]:
         """
         Get complete DEX trading history for an account, up to 60 days old.
         Uses cached transactions from CSV if available and only fetches new transactions.
@@ -231,6 +231,8 @@ class SolscanAPI:
                 - 'direction': 'before' or 'after' to fetch trades before or after the reference time
                 - 'window': maximum time difference in seconds (default 30)
             quiet: If True, suppresses progress bar display (useful when called from other functions with their own status displays)
+            days: If provided, only includes tokens that were first bought within this many days
+            defi_days: If provided, only includes transactions from the last X days
         
         Returns:
             List[SolscanDefiActivity]: List of trading activities sorted by timestamp (newest first)
@@ -242,6 +244,21 @@ class SolscanAPI:
         cached_trades = {}
         all_trades = []
         
+        # Calculate cutoff timestamp for defi_days if specified
+        defi_cutoff_timestamp = None
+        current_time = datetime.now().timestamp()
+        
+        if defi_days is not None:
+            defi_cutoff_timestamp = current_time - (defi_days * 86400)  # Convert days to seconds
+            if not quiet:
+                cutoff_date = datetime.fromtimestamp(defi_cutoff_timestamp).strftime('%Y-%m-%d %H:%M')
+                current_date = datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M')
+                self.console.print(f"[yellow]Filtering transactions to last {defi_days} days (since {cutoff_date}, current time: {current_date})[/yellow]")
+        
+        # Keep track of filtered transactions for logging
+        filtered_cached_count = 0
+        filtered_api_count = 0
+        
         # Load existing transactions from CSV if available
         latest_cached_timestamp = 0
         if os.path.exists(csv_filename):
@@ -252,6 +269,11 @@ class SolscanAPI:
                     for row in reader:
                         # Skip rows without required fields
                         if not all(key in row for key in ['trans_id', 'block_time', 'token1', 'token2']):
+                            continue
+                        
+                        # Apply defi_days filter before loading into memory
+                        if defi_cutoff_timestamp is not None and float(row['block_time']) < defi_cutoff_timestamp:
+                            filtered_cached_count += 1
                             continue
                             
                         # Convert the CSV data back to a dict format for SolscanDefiActivity
@@ -287,7 +309,10 @@ class SolscanAPI:
                         latest_cached_timestamp = max(latest_cached_timestamp, float(row['block_time']))
                 
                 if not quiet:
-                    self.console.print(f"[green]Loaded {len(cached_trades)} cached transactions[/green]")
+                    loaded_msg = f"[green]Loaded {len(cached_trades)} cached transactions[/green]"
+                    if filtered_cached_count > 0:
+                        loaded_msg += f" [yellow](filtered out {filtered_cached_count} older than {defi_days} days)[/yellow]"
+                    self.console.print(loaded_msg)
             except Exception as e:
                 self.console.print(f"[yellow]Error loading cached transactions: {str(e)}[/yellow]")
 
@@ -300,7 +325,11 @@ class SolscanAPI:
         
         if total_trades == 0:
             # Sort all trades by block_time, newest first
-            return sorted(all_trades, key=lambda x: x.block_time, reverse=True)
+            sorted_trades = sorted(all_trades, key=lambda x: x.block_time, reverse=True)
+            # Apply days filter if specified (token first purchase)
+            if days is not None:
+                sorted_trades = self._filter_by_first_purchase_date(sorted_trades, days)
+            return sorted_trades
 
         page = 1
         page_size = 100
@@ -320,13 +349,22 @@ class SolscanAPI:
         
         # Function to process data from a page of trades
         def process_page_data(trades_data):
-            nonlocal found_cached, all_trades, cached_trades, new_trades_count
+            nonlocal found_cached, all_trades, cached_trades, new_trades_count, filtered_api_count
             
             # Track if we've exceeded the time window for time-filtered queries
             exceeded_time_window = False
             
             # Check each trade
             for trade in trades_data:
+                # Apply defi_days filter here to API results
+                if defi_cutoff_timestamp is not None and trade['block_time'] < defi_cutoff_timestamp:
+                    filtered_api_count += 1
+                    # If this trade is too old, and it's older than what we have, we can stop
+                    if trade['block_time'] < latest_cached_timestamp and not time_filter:
+                        found_cached = True
+                        break
+                    continue
+                
                 # Check if this trade is outside our time window (for -4 and -7 optimization)
                 if reference_time is not None and time_direction is not None:
                     time_diff = trade['block_time'] - reference_time
@@ -449,25 +487,23 @@ class SolscanAPI:
         # Save new trades to CSV if we found any
         if new_trades_count > 0:
             try:
-                # Prepare to write to CSV (create a new file or append)
-                write_header = not os.path.exists(csv_filename)
+                # First, load all existing data to prevent overwriting
+                existing_data = []
+                if os.path.exists(csv_filename):
+                    with open(csv_filename, 'r') as f:
+                        reader = csv.DictReader(f)
+                        existing_data = list(reader)
                 
-                with open(csv_filename, 'w' if write_header else 'a', newline='') as f:
-                    fieldnames = ['trans_id', 'block_time', 'block_id', 'token1', 'token2', 'token1_decimals', 
-                                'token2_decimals', 'amount1', 'amount2', 'price_usdt', 'decimals', 
-                                'name', 'symbol', 'flow', 'value', 'from_address']
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    
-                    if write_header:
-                        writer.writeheader()
-                    
-                    # Only write new trades (that haven't been saved yet)
-                    for trade_id, trade in cached_trades.items():
-                        # Convert SolscanDefiActivity to CSV row format
+                # Create a dictionary of existing transactions by ID
+                existing_trades = {row['trans_id']: row for row in existing_data if 'trans_id' in row}
+                
+                # Update with new trades
+                for trade_id, trade in cached_trades.items():
+                    if trade_id not in existing_trades:  # Only add new trades
                         row = {
                             'trans_id': trade.get('trans_id', ''),
                             'block_time': trade.get('block_time', 0),
-                            'block_id': trade.get('slot', 0),  # Save block_id field
+                            'block_id': trade.get('slot', 0),
                             'token1': trade.get('amount_info', {}).get('token1', ''),
                             'token2': trade.get('amount_info', {}).get('token2', ''),
                             'token1_decimals': trade.get('amount_info', {}).get('token1_decimals', 0),
@@ -482,15 +518,43 @@ class SolscanAPI:
                             'value': trade.get('value', 0),
                             'from_address': trade.get('from_address', '')
                         }
-                        writer.writerow(row)
+                        existing_trades[trade_id] = row
+                
+                # Write all trades back to the CSV
+                with open(csv_filename, 'w', newline='') as f:
+                    fieldnames = ['trans_id', 'block_time', 'block_id', 'token1', 'token2', 'token1_decimals', 
+                                'token2_decimals', 'amount1', 'amount2', 'price_usdt', 'decimals', 
+                                'name', 'symbol', 'flow', 'value', 'from_address']
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(existing_trades.values())
+                
+                saved_msg = f"[green]Saved {new_trades_count} new transactions to {csv_filename}[/green]"
+                if filtered_api_count > 0:
+                    saved_msg += f" [yellow](filtered out {filtered_api_count} older than {defi_days} days)[/yellow]"
                 
                 if not quiet:
-                    self.console.print(f"[green]Saved {new_trades_count} new transactions to {csv_filename}[/green]")
+                    self.console.print(saved_msg)
             except Exception as e:
                 self.console.print(f"[red]Error saving transactions to CSV: {str(e)}[/red]")
 
-        # Sort all trades by block_time (newest first) and return
-        return sorted(all_trades, key=lambda x: x.block_time, reverse=True)
+        # Sort all trades by block_time (newest first)
+        sorted_trades = sorted(all_trades, key=lambda x: x.block_time, reverse=True)
+        
+        # Apply days filter if specified (token first purchase)
+        if days is not None:
+            sorted_trades = self._filter_by_first_purchase_date(sorted_trades, days)
+
+        # Apply final defi_days filter to ensure consistency
+        if defi_cutoff_timestamp is not None:
+            # This should be redundant as we already filtered during loading,
+            # but keeping it for safety to ensure no older transactions slip through
+            sorted_trades = [trade for trade in sorted_trades if trade.block_time >= defi_cutoff_timestamp]
+        
+        if not quiet and (filtered_cached_count > 0 or filtered_api_count > 0):
+            self.console.print(f"[yellow]Total filtered: {filtered_cached_count + filtered_api_count} transactions older than {defi_days} days[/yellow]")
+            
+        return sorted_trades
 
     def get_token_price(self, token_address: str) -> Optional[Dict[str, Any]]:
         """

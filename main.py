@@ -90,19 +90,32 @@ def print_usage():
         console.print("-1 <address>     Get Account Balance")
         console.print("-2 <address>     View Transaction History")
         console.print("-3 <address>     View Balance History")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-4 <address>     Detect Copy Traders")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-5 <address>     View DeFi Summary for Wallets")
+        console.print("   --days=<n>    Filter tokens first bought within the last n days")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-6 <token>       Get Holder Addresses using bullX")
         console.print("-7 <address>     Find Wallets Being Copied")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-8 <address>     Generate Activity Heatmap by Day/Hour")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("\n[bold]Examples:[/bold]")
         console.print("python main.py -1 <address>")
         console.print("python main.py -2 <address>")
         console.print("python main.py -3 <address>")
+        console.print("python main.py -3 <address> --defi_days=7")
         console.print("python main.py -4 <address>")
+        console.print("python main.py -4 <address> --defi_days=7")
         console.print("python main.py -5 <address1> <address2> <address3>")
+        console.print("python main.py -5 <address> --days=7")
+        console.print("python main.py -5 <address> --defi_days=7")
+        console.print("python main.py -5 <address> --days=7 --defi_days=30")
         console.print("python main.py -7 <address>")
+        console.print("python main.py -7 <address> --defi_days=7")
         console.print("python main.py -8 <address>")
+        console.print("python main.py -8 <address> --defi_days=7")
 
     except Exception as e:
         # Handle any other errors gracefully
@@ -111,19 +124,32 @@ def print_usage():
         console.print("-1 <address>     Get Account Balance")
         console.print("-2 <address>     View Transaction History")
         console.print("-3 <address>     View Balance History")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-4 <address>     Detect Copy Traders")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-5 <address>     View DeFi Summary for Wallets")
+        console.print("   --days=<n>    Filter tokens first bought within the last n days")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-6 <token>       Get Holder Addresses using bullX")
         console.print("-7 <address>     Find Wallets Being Copied")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("-8 <address>     Generate Activity Heatmap by Day/Hour")
+        console.print("   --defi_days=<n>    Filter transactions to the last n days")
         console.print("\n[bold]Examples:[/bold]")
         console.print("python main.py -1 <address>")
         console.print("python main.py -2 <address>")
         console.print("python main.py -3 <address>")
+        console.print("python main.py -3 <address> --defi_days=7")
         console.print("python main.py -4 <address>")
+        console.print("python main.py -4 <address> --defi_days=7")
         console.print("python main.py -5 <address1> <address2> <address3>")
+        console.print("python main.py -5 <address> --days=7")
+        console.print("python main.py -5 <address> --defi_days=7")
+        console.print("python main.py -5 <address> --days=7 --defi_days=30")
         console.print("python main.py -7 <address>")
+        console.print("python main.py -7 <address> --defi_days=7")
         console.print("python main.py -8 <address>")
+        console.print("python main.py -8 <address> --defi_days=7")
 
 def option_1(api, console):       
     if len(sys.argv) != 3:
@@ -255,12 +281,27 @@ def option_3(api, console):
     aggregate_mode = False
     addresses = []
     
-    # Get the addresses and check for aggregation flag
-    for i, arg in enumerate(sys.argv):
-        if arg == "-3":
-            aggregate_mode = True
-        elif i >= 2 and not arg.startswith("-"):
-            addresses.append(arg)
+    # Parse arguments and extract command flags
+    defi_days = None
+    args = sys.argv[2:]  # Skip the program name and option flag
+    
+    # Extract parameters and addresses
+    i = 0
+    while i < len(args):
+        if args[i].startswith('--defi_days='):
+            try:
+                defi_days = int(args[i].split('=')[1])
+                console.print(f"[yellow]Filtering transactions to the last {defi_days} days[/yellow]")
+            except (ValueError, IndexError):
+                console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
+                sys.exit(1)
+        elif args[i] == "-f" and i+1 < len(args):
+            # Skip the -f parameter and its value
+            i += 1
+        elif not args[i].startswith('-'):
+            # This is an address
+            addresses.append(args[i])
+        i += 1
     
     # If no addresses were found, use the first argument as a single address
     if not addresses:
@@ -282,7 +323,7 @@ def option_3(api, console):
     
     for address in addresses:
         api.console.print(f"\nFetching DEX trading history for {address}...", style="yellow")
-        trades = api.get_dex_trading_history(address)
+        trades = api.get_dex_trading_history(address, defi_days=defi_days)
         if trades:
             api.console.print(f"Found [green]{len(trades)}[/green] DEX trades for {address}")
             all_trades.extend(trades)
@@ -534,6 +575,39 @@ def option_5(api, console):
 
     addresses = []
     first_arg = sys.argv[2]
+    
+    # Parse arguments for parameter flags
+    days_filter = None
+    defi_days_filter = None
+    args = sys.argv[2:]  # Skip the program name and option flag
+    
+    # Extract parameters
+    i = 0
+    while i < len(args):
+        if args[i].startswith('--days='):
+            try:
+                days_filter = int(args[i].split('=')[1])
+                console.print(f"[yellow]Filtering tokens to those first bought within the last {days_filter} days[/yellow]")
+            except (ValueError, IndexError):
+                console.print("[red]Error: --days parameter must be an integer (e.g., --days=7)[/red]")
+                sys.exit(1)
+        elif args[i].startswith('--defi_days='):
+            try:
+                defi_days_filter = int(args[i].split('=')[1])
+                console.print(f"[yellow]Filtering transactions to the last {defi_days_filter} days[/yellow]")
+            except (ValueError, IndexError):
+                console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
+                sys.exit(1)
+        i += 1
+
+    # Update args after removing parameters
+    args = [arg for arg in args if not arg.startswith('--')]
+    if args:
+        first_arg = args[0]
+    else:
+        print("Error: At least one wallet address is required for option -5")
+        print_usage()
+        sys.exit(1)
 
     # Check if first argument is a .txt file
     if first_arg.endswith('.txt'):
@@ -554,8 +628,8 @@ def option_5(api, console):
             console.print(f"[red]Error reading file: {str(e)}[/red]")
             sys.exit(1)
     else:
-        # Use command line arguments as addresses
-        addresses = sys.argv[2:]
+        # Use command line arguments as addresses (excluding any options)
+        addresses = args
 
     # Store results for CSV export
     results = []
@@ -578,7 +652,7 @@ def option_5(api, console):
     total_wallets = len(addresses)
     for idx, addr in enumerate(addresses, 1):
         console.print(f"\n[yellow]Processing wallet {idx}/{total_wallets}: [cyan]{addr}[/cyan][/yellow]")
-        trades = api.get_dex_trading_history(addr)
+        trades = api.get_dex_trading_history(addr, days=days_filter, defi_days=defi_days_filter)
         if trades:
             console.print(f"Found [green]{len(trades)}[/green] DEX trades")
         else:
@@ -743,12 +817,34 @@ def option_4(api, console):
     - Number of unique tokens bought ≤30 seconds BEFORE the target
     - Number of unique tokens bought ≤30 seconds AFTER the target
     """
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         print("Error: Wallet address required for wallets analysis")
         print_usage()
         sys.exit(1)
     
-    target_wallet = sys.argv[2]
+    # Parse arguments for parameters
+    defi_days = None
+    args = sys.argv[2:]  # Skip the program name and option flag
+    
+    target_wallet = None
+    
+    # Extract parameters
+    i = 0
+    while i < len(args):
+        if args[i].startswith('--defi_days='):
+            try:
+                defi_days = int(args[i].split('=')[1])
+                console.print(f"[yellow]Filtering transactions to the last {defi_days} days[/yellow]")
+            except (ValueError, IndexError):
+                console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
+                sys.exit(1)
+        elif not args[i].startswith('--'):
+            # This is the target wallet address
+            target_wallet = args[i]
+        i += 1
+    
+    if not target_wallet:
+        target_wallet = sys.argv[2]  # Fallback to first argument
     
     # Create a table to display results
     wallets_table = Table(title=f"Wallets Trading Same Tokens as {target_wallet}")
@@ -760,7 +856,7 @@ def option_4(api, console):
     wallets = {}  # Structure: {wallet_address: {'before': set(), 'after': set()}}
     
     console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
-    trades = api.get_dex_trading_history(target_wallet, quiet=True)
+    trades = api.get_dex_trading_history(target_wallet, quiet=True, defi_days=defi_days)
     
     if not trades:
         console.print("[red]No DEX trading history found for this wallet[/red]")
@@ -896,12 +992,34 @@ def option_7(api, console):
     3. Track wallets that show up multiple times (suggesting the target is copy trading them)
     4. Display summary of potential trading signals
     """
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         print("Error: Wallet address required for copy trading source detection")
         print_usage()
         sys.exit(1)
     
-    target_wallet = sys.argv[2]
+    # Parse arguments for parameters
+    defi_days = None
+    args = sys.argv[2:]  # Skip the program name and option flag
+    
+    target_wallet = None
+    
+    # Extract parameters
+    i = 0
+    while i < len(args):
+        if args[i].startswith('--defi_days='):
+            try:
+                defi_days = int(args[i].split('=')[1])
+                console.print(f"[yellow]Filtering transactions to the last {defi_days} days[/yellow]")
+            except (ValueError, IndexError):
+                console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
+                sys.exit(1)
+        elif not args[i].startswith('--'):
+            # This is the target wallet address
+            target_wallet = args[i]
+        i += 1
+    
+    if not target_wallet:
+        target_wallet = sys.argv[2]  # Fallback to first argument
     
     # Create a table to display results
     copy_sources_table = Table(title=f"Wallets {target_wallet} Potentially Copy Trades From")
@@ -914,7 +1032,7 @@ def option_7(api, console):
     copy_sources = {}  # Structure: {wallet_address: {'count': int, 'tokens': set, 'delays': list}}
     
     console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
-    trades = api.get_dex_trading_history(target_wallet, quiet=True)
+    trades = api.get_dex_trading_history(target_wallet, quiet=True, defi_days=defi_days)
     
     if not trades:
         console.print("[red]No DEX trading history found for this wallet[/red]")
@@ -966,7 +1084,7 @@ def option_7(api, console):
                 'direction': 'before',
                 'window': 30
             }
-            token_trades = api.get_dex_trading_history(token, time_filter, quiet=True)
+            token_trades = api.get_dex_trading_history(token, time_filter, quiet=True, defi_days=defi_days)
             
             # Find trades within 30 seconds BEFORE the target's trade
             for trade in token_trades:
@@ -1063,12 +1181,34 @@ def option_8(api, console):
     the amount of DeFi activity that occurred during that specific day/hour combination.
     The intensity of the color represents the relative amount of activity.
     """
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         print("Error: Wallet address required for activity heatmap")
         print_usage()
         sys.exit(1)
     
-    target_wallet = sys.argv[2]
+    # Parse arguments for parameters
+    defi_days = None
+    args = sys.argv[2:]  # Skip the program name and option flag
+    
+    target_wallet = None
+    
+    # Extract parameters
+    i = 0
+    while i < len(args):
+        if args[i].startswith('--defi_days='):
+            try:
+                defi_days = int(args[i].split('=')[1])
+                console.print(f"[yellow]Filtering transactions to the last {defi_days} days[/yellow]")
+            except (ValueError, IndexError):
+                console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
+                sys.exit(1)
+        elif not args[i].startswith('--'):
+            # This is the target wallet address
+            target_wallet = args[i]
+        i += 1
+    
+    if not target_wallet:
+        target_wallet = sys.argv[2]  # Fallback to first argument
     
     # Import required rich components for visualization
     from rich.text import Text
@@ -1078,7 +1218,7 @@ def option_8(api, console):
     days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     
     console.print(f"\n[yellow]Fetching DeFi trading history for {target_wallet}...[/yellow]")
-    trades = api.get_dex_trading_history(target_wallet)
+    trades = api.get_dex_trading_history(target_wallet, defi_days=defi_days)
     
     if not trades:
         console.print("[red]No DeFi trading history found for this wallet[/red]")
