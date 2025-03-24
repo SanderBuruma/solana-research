@@ -562,119 +562,158 @@ def option_5(api, console):
         # Use command line arguments as addresses (excluding any options)
         addresses = args
 
-    # Store results for CSV export
-    results = []
-    
-    summary_table = Table(title="DeFi Summary for Wallets")
-    summary_table.add_column("Address", style="cyan")
-    summary_table.add_column("24H ROI %", justify="right", style="magenta")
-    summary_table.add_column("7D ROI %", justify="right", style="magenta")
-    summary_table.add_column("30D ROI %", justify="right", style="magenta")
-    summary_table.add_column("60D ROI %", justify="right", style="magenta")
-    summary_table.add_column("60D ROI", justify="right", style="yellow")
-    summary_table.add_column("Total Fees", justify="right", style="red")
-    summary_table.add_column("Win Rate", justify="right", style="green")
-    summary_table.add_column("Med Investment", justify="right", style="green")
-    summary_table.add_column("Med ROI %", justify="right", style="magenta")
-    summary_table.add_column("Med Hold Time", justify="right", style="blue")
-    summary_table.add_column("Med Market Entry", justify="right", style="yellow")
-    summary_table.add_column("Med MC %", justify="right", style="cyan")
-    
-    total_wallets = len(addresses)
-    for idx, addr in enumerate(addresses, 1):
-        console.print(f"\n[yellow]Processing wallet {idx}/{total_wallets}: [cyan]{addr}[/cyan][/yellow]")
-        trades = api.get_dex_trading_history(addr, days=days_filter, defi_days=defi_days_filter)
-        if trades:
-            console.print(f"Found [green]{len(trades)}[/green] DEX trades")
-        else:
-            console.print("[red]No DEX trading history found[/red]")
-            continue
-
-        # Use analyze_trades to get structured data
-        token_data, roi_data, tx_summary = analyze_trades(trades, api.console)
-
-        # Calculate total fees from token data
-        total_fees = sum(token['total_fees'] for token in token_data)
-        total_buy_fees = sum(token['buy_fees'] for token in token_data)
-        total_sell_fees = sum(token['sell_fees'] for token in token_data)
-
-        def format_duration(td):
-            days = td.days
-            hours = td.seconds // 3600
-            minutes = (td.seconds % 3600) // 60
-            if days > 0:
-                return f"{days}d {hours}h {minutes}m"
-            elif hours > 0:
-                return f"{hours}h {minutes}m"
-            else:
-                return f"{minutes}m"
-
-        # Store result for CSV
-        results.append({
-            "Address": addr,
-            "24H ROI %": f"{roi_data['24h']['roi_percent']:.2f}" if roi_data['24h']['roi_percent'] is not None else "N/A",
-            "7D ROI %": f"{roi_data['7d']['roi_percent']:.2f}" if roi_data['7d']['roi_percent'] is not None else "N/A",
-            "30D ROI %": f"{roi_data['30d']['roi_percent']:.2f}" if roi_data['30d']['roi_percent'] is not None else "N/A",
-            "60D ROI %": f"{roi_data['60d']['roi_percent']:.2f}" if roi_data['60d']['roi_percent'] is not None else "N/A",
-            "60D ROI": f"{roi_data['60d']['profit']:.3f}",  # Already includes fees
-            "Total Fees": f"{total_fees:.3f}",
-            "Buy Fees": f"{total_buy_fees:.3f}",
-            "Sell Fees": f"{total_sell_fees:.3f}",
-            "Win Rate": f"{tx_summary['win_rate']:.1f}",
-            "Profitable/Total": tx_summary['win_rate_ratio'],
-            "Median Investment": f"{tx_summary['median_investment']:.3f}",
-            "Median ROI %": f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
-            "Median Hold Time": format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
-            "win_rate": tx_summary['win_rate'],
-            "med_investment": tx_summary['median_investment'],
-            "med_roi": tx_summary['median_roi_percent'],
-            "med_hold_time": tx_summary['median_hold_time'],
-            "med_market_entry": tx_summary['median_market_entry'],
-            "med_mc_percentage": tx_summary['median_mc_percentage']
-        })
-        
-        # Color coding for display
-        win_rate_color = "green" if tx_summary['win_rate'] >= 50 else "red"
-        roi_24h = roi_data['24h']['roi_percent']  # Already includes fees
-        roi_7d = roi_data['7d']['roi_percent']    # Already includes fees
-        roi_30d = roi_data['30d']['roi_percent']  # Already includes fees
-        roi_60d = roi_data['60d']['roi_percent']  # Already includes fees
-        
-        # Color ROIs based on profit/loss (after fees)
-        roi_24h_color = "green" if roi_24h and roi_24h > 0 else "red"
-        roi_7d_color = "green" if roi_7d and roi_7d > 0 else "red"
-        roi_30d_color = "green" if roi_30d and roi_30d > 0 else "red"
-        roi_60d_color = "green" if roi_60d and roi_60d > 0 else "red"
-        
-        summary_table.add_row(
-            addr,
-            f"[{roi_24h_color}]{roi_24h:+.2f}%[/{roi_24h_color}]" if roi_24h is not None else "N/A",
-            f"[{roi_7d_color}]{roi_7d:+.2f}%[/{roi_7d_color}]" if roi_7d is not None else "N/A",
-            f"[{roi_30d_color}]{roi_30d:+.2f}%[/{roi_30d_color}]" if roi_30d is not None else "N/A",
-            f"[{roi_60d_color}]{roi_60d:+.2f}%[/{roi_60d_color}]" if roi_60d is not None else "N/A",
-            f"{roi_data['60d']['profit']:.3f} SOL",  # Already includes fees
-            f"[red]{total_fees:.3f} ◎[/red]",
-            f"[{win_rate_color}]{tx_summary['win_rate']:.1f}% ({tx_summary['win_rate_ratio']})[/{win_rate_color}]",
-            f"{tx_summary['median_investment']:.3f} ◎",
-            f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
-            format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
-            format_mc(tx_summary['median_market_entry']),
-            f"{tx_summary['median_mc_percentage']:.4f}%",
-        )
-    
-    # Print the table
-    console.print(summary_table)
-    
-    # Save to CSV
+    # Create the base timestamp for all batch files
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
-    csv_filename = f'reports/{timestamp}-option5.csv'
     
-    with open(csv_filename, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=results[0].keys() if results else [])
-        writer.writeheader()
-        writer.writerows(results)
+    # Create the reports directory if it doesn't exist
+    os.makedirs('reports', exist_ok=True)
     
-    console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
+    # Create master CSV filename
+    master_csv_filename = f'reports/{timestamp}-option5-master.csv'
+    
+    # Store all results for master CSV
+    all_results = []
+    
+    # Split addresses into batches of 100
+    batch_size = 100
+    address_batches = [addresses[i:i+batch_size] for i in range(0, len(addresses), batch_size)]
+    
+    total_batches = len(address_batches)
+    console.print(f"[bold yellow]Processing {len(addresses)} addresses in {total_batches} batches of {batch_size}[/bold yellow]")
+    
+    # Process each batch
+    for batch_idx, batch_addresses in enumerate(address_batches, 1):
+        console.print(f"\n[bold cyan]===== Processing Batch {batch_idx}/{total_batches} =====\n[/bold cyan]")
+        
+        # Store results for this batch
+        batch_results = []
+        
+        summary_table = Table(title=f"DeFi Summary for Wallets (Batch {batch_idx}/{total_batches})")
+        summary_table.add_column("Address", style="cyan")
+        summary_table.add_column("24H ROI %", justify="right", style="magenta")
+        summary_table.add_column("7D ROI %", justify="right", style="magenta")
+        summary_table.add_column("30D ROI %", justify="right", style="magenta")
+        summary_table.add_column("60D ROI %", justify="right", style="magenta")
+        summary_table.add_column("60D ROI", justify="right", style="yellow")
+        summary_table.add_column("Total Fees", justify="right", style="red")
+        summary_table.add_column("Win Rate", justify="right", style="green")
+        summary_table.add_column("Med Investment", justify="right", style="green")
+        summary_table.add_column("Med ROI %", justify="right", style="magenta")
+        summary_table.add_column("Med Hold Time", justify="right", style="blue")
+        summary_table.add_column("Med Market Entry", justify="right", style="yellow")
+        summary_table.add_column("Med MC %", justify="right", style="cyan")
+        
+        total_wallets_in_batch = len(batch_addresses)
+        for idx, addr in enumerate(batch_addresses, 1):
+            console.print(f"[yellow]Processing wallet {idx}/{total_wallets_in_batch} in batch {batch_idx}/{total_batches}: [cyan]{addr}[/cyan][/yellow]")
+            trades = api.get_dex_trading_history(addr, days=days_filter, defi_days=defi_days_filter)
+            if trades:
+                console.print(f"Found [green]{len(trades)}[/green] DEX trades")
+            else:
+                console.print("[red]No DEX trading history found[/red]")
+                continue
+
+            # Use analyze_trades to get structured data
+            token_data, roi_data, tx_summary = analyze_trades(trades, api.console)
+
+            # Calculate total fees from token data
+            total_fees = sum(token['total_fees'] for token in token_data)
+            total_buy_fees = sum(token['buy_fees'] for token in token_data)
+            total_sell_fees = sum(token['sell_fees'] for token in token_data)
+
+            def format_duration(td):
+                days = td.days
+                hours = td.seconds // 3600
+                minutes = (td.seconds % 3600) // 60
+                if days > 0:
+                    return f"{days}d {hours}h {minutes}m"
+                elif hours > 0:
+                    return f"{hours}h {minutes}m"
+                else:
+                    return f"{minutes}m"
+
+            # Create result record
+            result = {
+                "Address": addr,
+                "24H ROI %": f"{roi_data['24h']['roi_percent']:.2f}" if roi_data['24h']['roi_percent'] is not None else "N/A",
+                "7D ROI %": f"{roi_data['7d']['roi_percent']:.2f}" if roi_data['7d']['roi_percent'] is not None else "N/A",
+                "30D ROI %": f"{roi_data['30d']['roi_percent']:.2f}" if roi_data['30d']['roi_percent'] is not None else "N/A",
+                "60D ROI %": f"{roi_data['60d']['roi_percent']:.2f}" if roi_data['60d']['roi_percent'] is not None else "N/A",
+                "60D ROI": f"{roi_data['60d']['profit']:.3f}",  # Already includes fees
+                "Total Fees": f"{total_fees:.3f}",
+                "Buy Fees": f"{total_buy_fees:.3f}",
+                "Sell Fees": f"{total_sell_fees:.3f}",
+                "Win Rate": f"{tx_summary['win_rate']:.1f}",
+                "Profitable/Total": tx_summary['win_rate_ratio'],
+                "Median Investment": f"{tx_summary['median_investment']:.3f}",
+                "Median ROI %": f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
+                "Median Hold Time": format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
+                "win_rate": tx_summary['win_rate'],
+                "med_investment": tx_summary['median_investment'],
+                "med_roi": tx_summary['median_roi_percent'],
+                "med_hold_time": tx_summary['median_hold_time'],
+                "med_market_entry": tx_summary['median_market_entry'],
+                "med_mc_percentage": tx_summary['median_mc_percentage'],
+                "Batch": batch_idx
+            }
+
+            # Add to batch results and all results
+            batch_results.append(result)
+            all_results.append(result)
+            
+            # Color coding for display
+            win_rate_color = "green" if tx_summary['win_rate'] >= 50 else "red"
+            roi_24h = roi_data['24h']['roi_percent']  # Already includes fees
+            roi_7d = roi_data['7d']['roi_percent']    # Already includes fees
+            roi_30d = roi_data['30d']['roi_percent']  # Already includes fees
+            roi_60d = roi_data['60d']['roi_percent']  # Already includes fees
+            
+            # Color ROIs based on profit/loss (after fees)
+            roi_24h_color = "green" if roi_24h and roi_24h > 0 else "red"
+            roi_7d_color = "green" if roi_7d and roi_7d > 0 else "red"
+            roi_30d_color = "green" if roi_30d and roi_30d > 0 else "red"
+            roi_60d_color = "green" if roi_60d and roi_60d > 0 else "red"
+            
+            summary_table.add_row(
+                addr,
+                f"[{roi_24h_color}]{roi_24h:+.2f}%[/{roi_24h_color}]" if roi_24h is not None else "N/A",
+                f"[{roi_7d_color}]{roi_7d:+.2f}%[/{roi_7d_color}]" if roi_7d is not None else "N/A",
+                f"[{roi_30d_color}]{roi_30d:+.2f}%[/{roi_30d_color}]" if roi_30d is not None else "N/A",
+                f"[{roi_60d_color}]{roi_60d:+.2f}%[/{roi_60d_color}]" if roi_60d is not None else "N/A",
+                f"{roi_data['60d']['profit']:.3f} SOL",  # Already includes fees
+                f"[red]{total_fees:.3f} ◎[/red]",
+                f"[{win_rate_color}]{tx_summary['win_rate']:.1f}% ({tx_summary['win_rate_ratio']})[/{win_rate_color}]",
+                f"{tx_summary['median_investment']:.3f} ◎",
+                f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
+                format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
+                format_mc(tx_summary['median_market_entry']),
+                f"{tx_summary['median_mc_percentage']:.4f}%",
+            )
+        
+        # Print the batch table
+        console.print(summary_table)
+        
+        # Save batch to CSV
+        if batch_results:
+            batch_csv_filename = f'reports/{timestamp}-option5-batch{batch_idx}.csv'
+            
+            with open(batch_csv_filename, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=batch_results[0].keys())
+                writer.writeheader()
+                writer.writerows(batch_results)
+            
+            console.print(f"\n[yellow]Batch {batch_idx} results saved to {batch_csv_filename}[/yellow]")
+    
+    # Save master CSV with all results
+    if all_results:
+        with open(master_csv_filename, 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=all_results[0].keys())
+            writer.writeheader()
+            writer.writerows(all_results)
+        
+        console.print(f"\n[bold green]All results saved to {master_csv_filename}[/bold green]")
+    else:
+        console.print("\n[red]No results to save[/red]")
 
 def option_6(api, console):
     if len(sys.argv) < 3:
