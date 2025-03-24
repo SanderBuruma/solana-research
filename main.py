@@ -562,6 +562,14 @@ def option_5(api, console):
         # Use command line arguments as addresses (excluding any options)
         addresses = args
 
+    # De-duplicate addresses to avoid processing the same address multiple times
+    original_count = len(addresses)
+    addresses = list(set(addresses))  # Convert to set and back to list to remove duplicates
+    duplicates_removed = original_count - len(addresses)
+    
+    if duplicates_removed > 0:
+        console.print(f"[yellow]Removed {duplicates_removed} duplicate address{'es' if duplicates_removed > 1 else ''} from the input[/yellow]")
+
     # Create the base timestamp for all batch files
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     
