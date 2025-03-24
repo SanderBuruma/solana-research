@@ -285,7 +285,7 @@ class SolscanAPI:
         latest_cached_timestamp = 0
         if not skip_csv and os.path.exists(csv_filename):
             try:
-                with open(csv_filename, 'r') as f:
+                with open(csv_filename, 'r', encoding='utf-8') as f:
                     reader = csv.DictReader(f)
                     # Convert CSV data back to SolscanDefiActivity objects
                     for row in reader:
@@ -536,7 +536,7 @@ class SolscanAPI:
                 # First, load all existing data to prevent overwriting
                 existing_data = []
                 if os.path.exists(csv_filename):
-                    with open(csv_filename, 'r') as f:
+                    with open(csv_filename, 'r', encoding='utf-8') as f:
                         reader = csv.DictReader(f)
                         existing_data = list(reader)
                 
@@ -567,7 +567,7 @@ class SolscanAPI:
                         existing_trades[trade_id] = row
                 
                 # Write all trades back to the CSV
-                with open(csv_filename, 'w', newline='') as f:
+                with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
                     fieldnames = ['trans_id', 'block_time', 'block_id', 'token1', 'token2', 'token1_decimals', 
                                 'token2_decimals', 'amount1', 'amount2', 'price_usdt', 'decimals', 
                                 'name', 'symbol', 'flow', 'value', 'from_address']
@@ -1004,7 +1004,7 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
     # Prepare CSV data
     os.makedirs('reports', exist_ok=True)
     csv_file = f'reports/{wallet_address}.csv'
-    with open(csv_file, 'w') as f:
+    with open(csv_file, 'w', encoding='utf-8') as f:
         f.write("Token,First Trade,Hold Time,Last Trade,First MC,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Token Price (USDT),Trades\n")
         
         for token, stats in sorted_tokens:

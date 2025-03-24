@@ -89,7 +89,7 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
             self.assertEqual(trades[0].transaction_id, 'test_tx_1', "Transaction ID should match")
             
             # Verify the CSV file contains the right data
-            with open(csv_path, 'r') as f:
+            with open(csv_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 self.assertIn('test_tx_1', content, "CSV should contain the transaction ID")
     
@@ -104,7 +104,7 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
         
         # Create a mock transaction data
         cached_tx_time = time.time()
-        with open(csv_path, 'w', newline='') as f:
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(['trans_id', 'block_time', 'block_id', 'token1', 'token2', 'token1_decimals', 
                           'token2_decimals', 'amount1', 'amount2', 'price_usdt', 'decimals', 
@@ -115,7 +115,7 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
                           '', '', '', '0', ''])
         
         # Verify CSV has one entry
-        with open(csv_path, 'r') as f:
+        with open(csv_path, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             rows = list(reader)
             self.assertEqual(len(rows), 1, "CSV should start with 1 trade")
@@ -160,7 +160,7 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
             self.assertIn('api_tx_1', trade_ids, "New API trade should be in the results")
             
             # Verify the CSV file contents manually
-            with open(csv_path, 'r') as f:
+            with open(csv_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 self.assertIn('cached_tx_1', content, "CSV should contain cached transaction")
                 self.assertIn('api_tx_1', content, "CSV should contain new transaction")
@@ -175,7 +175,7 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
         os.makedirs(os.path.dirname(csv_path), exist_ok=True)
         
         current_time = time.time()
-        with open(csv_path, 'w', newline='') as f:
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(['trans_id', 'block_time', 'block_id', 'token1', 'token2', 'token1_decimals', 
                           'token2_decimals', 'amount1', 'amount2', 'price_usdt', 'decimals', 
@@ -214,7 +214,7 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
         os.makedirs(os.path.dirname(csv_path), exist_ok=True)
         
         current_time = time.time()
-        with open(csv_path, 'w', newline='') as f:
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(['trans_id', 'block_time', 'block_id', 'token1', 'token2', 'token1_decimals', 
                           'token2_decimals', 'amount1', 'amount2', 'price_usdt', 'decimals', 
@@ -259,7 +259,7 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
             self.assertEqual(len(trades), 1, "Should not duplicate transactions")
             
             # Check CSV still has only one entry
-            with open(csv_path, 'r') as f:
+            with open(csv_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 rows = list(reader)
                 self.assertEqual(len(rows), 1, "CSV should still contain only 1 trade")
@@ -292,7 +292,7 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
             csv_path = f"./dex_activity/{self.TEST_WALLET}/transactions.csv"
             self.assertTrue(os.path.exists(csv_path), "CSV file was not created")
             
-            with open(csv_path, 'r') as f:
+            with open(csv_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 rows = list(reader)
                 self.assertEqual(len(rows), trade_count1, f"CSV should contain {trade_count1} trades")

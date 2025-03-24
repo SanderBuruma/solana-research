@@ -13,6 +13,26 @@ from rich.panel import Panel
 
 from utils.solscan import SolscanAPI, analyze_trades, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
 
+def deduplicate_addresses(addresses, console):
+    """
+    De-duplicate a list of addresses and report if duplicates were removed.
+    
+    Args:
+        addresses (List[str]): List of addresses to de-duplicate
+        console (Console): Rich console for output
+        
+    Returns:
+        List[str]: De-duplicated list of addresses
+    """
+    original_count = len(addresses)
+    unique_addresses = list(set(addresses))  # Convert to set and back to list to remove duplicates
+    duplicates_removed = original_count - len(unique_addresses)
+    
+    if duplicates_removed > 0:
+        console.print(f"[yellow]Removed {duplicates_removed} duplicate address{'es' if duplicates_removed > 1 else ''} from the input[/yellow]")
+    
+    return unique_addresses
+
 def is_sol_token(token: str) -> bool:
     """Check if a token address is SOL"""
     SOL_ADDRESSES = {
@@ -83,17 +103,70 @@ def print_usage():
     console.print(Panel(markdown, title="Solana Research Tool - Documentation", border_style="green", expand=False))
     
 def option_1(api, console):       
-    if len(sys.argv) != 3:
+    if len(sys.argv) < 3:
         print("Error: Address required for account balance")
         print_usage()
         sys.exit(1)
-    address = sys.argv[2]
+    
+    # Parse arguments
+    args = sys.argv[2:]
+    aggregate_mode = False
+    addresses = []
+    
+    # Check for aggregation flag
+    if "-a" in args:
+        aggregate_mode = True
+        args.remove("-a")
+    
+    # Process input addresses
+    if args and args[0].endswith('.txt'):
+        # Reading from a text file
+        file_path = args[0]
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # Find all Solana addresses (base58 strings of 43-44 characters)
+                found_addresses = re.findall(r'\b[a-zA-Z0-9]{43,44}\b', content)
+                if not found_addresses:
+                    console.print(f"[red]No valid Solana addresses found in {file_path}[/red]")
+                    sys.exit(1)
+                addresses.extend(found_addresses)
+                console.print(f"[green]Found {len(addresses)} addresses in {file_path}[/green]")
+        except FileNotFoundError:
+            console.print(f"[red]Error: File {file_path} not found[/red]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]Error reading file: {str(e)}[/red]")
+            sys.exit(1)
+    else:
+        # Use command line arguments as addresses
+        addresses = args
+    
+    # De-duplicate addresses
+    addresses = deduplicate_addresses(addresses, console)
+    
+    if not addresses:
+        console.print("[red]No valid addresses provided[/red]")
+        sys.exit(1)
+    
+    # Process in aggregate mode or individual mode
+    if aggregate_mode:
+        console.print(f"[yellow]Processing {len(addresses)} addresses in aggregate mode[/yellow]")
+        process_aggregate_balances(api, console, addresses)
+    else:
+        # Process each address individually
+        for address in addresses:
+            console.print(f"\n[yellow]Processing address: [cyan]{address}[/cyan][/yellow]")
+            process_single_balance(api, console, address)
+
+def process_single_balance(api, console, address):
+    """Process balance for a single address"""
     balance = api.get_account_balance(address)
     if balance is not None:
-        api.console.print(f"\nAccount Balance: [green]{balance:.9f}[/green] SOL")
+        console.print(f"Account Balance: [green]{balance:.9f}[/green] SOL")
     else:
-        api.console.print("[red]Failed to fetch account balance[/red]")
-        sys.exit(1)
+        console.print("[red]Failed to fetch account balance[/red]")
+        return
 
     sol_price_data = api.get_token_price("So11111111111111111111111111111111111111112")
     sol_price = sol_price_data.get("price_usdt", 0) if sol_price_data else 0
@@ -142,11 +215,11 @@ def option_1(api, console):
             
             # Create CSV file with headers if it doesn't exist
             if not os.path.exists(csv_filename):
-                with open(csv_filename, 'w') as f:
+                with open(csv_filename, 'w', encoding='utf-8') as f:
                     f.write("timestamp,sol_balance,token_balance,total_balance\n")
             
             # Append new balance data
-            with open(csv_filename, 'a') as f:
+            with open(csv_filename, 'a', encoding='utf-8') as f:
                 f.write(f"{timestamp},{balance:.9f},{total_tokens_value:.9f},{total_sol:.9f}\n")
             
             console.print(f"\n[yellow]Balance data saved to {csv_filename}[/yellow]")
@@ -176,6 +249,128 @@ def option_1(api, console):
             console.print(token_table)
     else:
         console.print("[yellow]No token account data found.[/yellow]")
+
+def process_aggregate_balances(api, console, addresses):
+    """Process balances for multiple addresses in aggregate mode"""
+    total_sol_balance = 0.0
+    total_token_value = 0.0
+    all_tokens = {}  # {token_address: (name, symbol, balance, value)}
+    total_addresses = len(addresses)
+    
+    # Get SOL price once to use for all calculations
+    sol_price_data = api.get_token_price("So11111111111111111111111111111111111111112")
+    sol_price = sol_price_data.get("price_usdt", 0) if sol_price_data else 0
+    
+    console.print(f"SOL Price: ${sol_price:.2f}")
+    
+    # Process each address
+    for idx, address in enumerate(addresses, 1):
+        console.print(f"[cyan]Processing address {idx}/{total_addresses}: {address}[/cyan]")
+        
+        # Get SOL balance
+        balance = api.get_account_balance(address)
+        if balance is not None:
+            total_sol_balance += balance
+            console.print(f"SOL Balance: {balance:.9f}")
+        else:
+            console.print(f"[red]Failed to fetch SOL balance for {address}[/red]")
+        
+        # Get token balances
+        token_data = api.get_token_accounts(address)
+        if token_data and token_data.get("success") and token_data.get("data"):
+            tokens = token_data["data"].get("tokenAccounts", [])
+            for token in tokens:
+                token_name = token.get("tokenName", "Unknown")
+                token_symbol = token.get("tokenSymbol", "Unknown")
+                token_address = token.get("tokenAddress", "Unknown")
+                balance_token = int(float(token.get("balance", 0)))
+                usd_value = token.get("value", 0)
+                true_value_in_sol = (usd_value / sol_price) if sol_price > 0 else usd_value
+                
+                if balance_token == 0 or true_value_in_sol < 0.01:
+                    continue
+                
+                total_token_value += true_value_in_sol
+                
+                # Aggregate token data
+                if token_address in all_tokens:
+                    # Update existing token data
+                    current_balance, current_value = all_tokens[token_address][2:4]
+                    all_tokens[token_address] = (token_name, token_symbol, current_balance + balance_token, current_value + true_value_in_sol)
+                else:
+                    # Add new token
+                    all_tokens[token_address] = (token_name, token_symbol, balance_token, true_value_in_sol)
+    
+    # Calculate total value and percentages
+    total_value = total_sol_balance + total_token_value
+    sol_percentage = (total_sol_balance / total_value * 100) if total_value > 0 else 0
+    token_percentage = (total_token_value / total_value * 100) if total_value > 0 else 0
+    
+    # Print aggregate summary
+    console.print("\n[bold green]===== Aggregate Balance Summary =====[/bold green]")
+    summary = (f"\nTotal SOL:   {total_sol_balance:15.9f} SOL ([cyan]{sol_percentage:.1f}%[/cyan])\n"
+               f"Total Tokens: {total_token_value:15.9f} SOL ([cyan]{token_percentage:.1f}%[/cyan])\n"
+               f"Grand Total: {total_value:15.9f} SOL ([green]100%[/green])")
+    console.print(summary)
+    
+    # Create token summary table
+    token_table = Table(title="\nAggregate Token Holdings")
+    token_table.add_column("Token Address", style="dim")
+    token_table.add_column("Token Name", style="cyan")
+    token_table.add_column("Token Symbol", style="magenta")
+    token_table.add_column("Balance", justify="right", style="yellow")
+    token_table.add_column("Value in SOL", justify="right", style="green")
+    token_table.add_column("% of Total", justify="right", style="cyan")
+    
+    # Sort tokens by value
+    sorted_tokens = sorted(all_tokens.items(), key=lambda x: x[1][3], reverse=True)
+    
+    # Add tokens to the table
+    for token_address, (token_name, token_symbol, balance, value) in sorted_tokens:
+        # Format balance with k/m/b suffix
+        formatted_balance = format_token_amount(balance)
+        # Calculate percentage of total portfolio
+        token_percent = (value / total_value * 100) if total_value > 0 else 0
+        token_table.add_row(
+            token_address,
+            token_name,
+            token_symbol,
+            formatted_balance,
+            f"{value:.3f}",
+            f"{token_percent:.1f}%"
+        )
+    
+    console.print(token_table)
+    
+    # Save aggregate data to CSV
+    os.makedirs("reports", exist_ok=True)
+    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+    csv_filename = f"reports/aggregate_balance_{timestamp}.csv"
+    
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Report Type", "Aggregate Balance"])
+        writer.writerow(["Timestamp", timestamp])
+        writer.writerow(["Addresses Analyzed", total_addresses])
+        writer.writerow([])
+        writer.writerow(["SOL Balance", f"{total_sol_balance:.9f}"])
+        writer.writerow(["Token Value (in SOL)", f"{total_token_value:.9f}"])
+        writer.writerow(["Total Value", f"{total_value:.9f}"])
+        writer.writerow([])
+        writer.writerow(["Token Address", "Token Name", "Token Symbol", "Balance", "Value in SOL", "% of Portfolio"])
+        
+        for token_address, (token_name, token_symbol, balance, value) in sorted_tokens:
+            token_percent = (value / total_value * 100) if total_value > 0 else 0
+            writer.writerow([
+                token_address,
+                token_name,
+                token_symbol,
+                balance,
+                f"{value:.9f}",
+                f"{token_percent:.2f}%"
+            ])
+    
+    console.print(f"\n[yellow]Aggregate balance data saved to {csv_filename}[/yellow]")
 
 def option_2(api, console):
     if len(sys.argv) != 3:
@@ -459,7 +654,7 @@ def option_3(api, console):
         csv_filename = f'{wallet_dir}/dex-trades-{timestamp}.csv'
 
     # Save to CSV
-    with open(csv_filename, 'w') as f:
+    with open(csv_filename, 'w', encoding='utf-8') as f:
         f.write("Token,First Trade,Hold Time,Last Trade,First MC,SOL Invested,SOL Received,SOL Profit (after fees),Buy Fees,Sell Fees,Total Fees,Remaining Value,Total Profit (after fees),Token Price (USDT),Trades\n")
         for token in token_data:
             hold_time_td = timedelta(seconds=token['hold_time'])
@@ -543,7 +738,7 @@ def option_5(api, console):
     # Check if first argument is a .txt file
     if first_arg.endswith('.txt'):
         try:
-            with open(first_arg, 'r') as f:
+            with open(first_arg, 'r', encoding='utf-8') as f:
                 content = f.read()
                 # Find all Solana addresses (base58 strings of 43-44 characters)
                 found_addresses = re.findall(r'\b[a-zA-Z0-9]{43,44}\b', content)
@@ -563,12 +758,7 @@ def option_5(api, console):
         addresses = args
 
     # De-duplicate addresses to avoid processing the same address multiple times
-    original_count = len(addresses)
-    addresses = list(set(addresses))  # Convert to set and back to list to remove duplicates
-    duplicates_removed = original_count - len(addresses)
-    
-    if duplicates_removed > 0:
-        console.print(f"[yellow]Removed {duplicates_removed} duplicate address{'es' if duplicates_removed > 1 else ''} from the input[/yellow]")
+    addresses = deduplicate_addresses(addresses, console)
 
     # Create the base timestamp for all batch files
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
@@ -705,7 +895,7 @@ def option_5(api, console):
         if batch_results:
             batch_csv_filename = f'reports/{timestamp}-option5-batch{batch_idx}.csv'
             
-            with open(batch_csv_filename, 'w', newline='') as f:
+            with open(batch_csv_filename, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=batch_results[0].keys())
                 writer.writeheader()
                 writer.writerows(batch_results)
@@ -714,7 +904,7 @@ def option_5(api, console):
     
     # Save master CSV with all results
     if all_results:
-        with open(master_csv_filename, 'w', newline='') as f:
+        with open(master_csv_filename, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=all_results[0].keys())
             writer.writeheader()
             writer.writerows(all_results)
@@ -767,7 +957,7 @@ def option_6(api, console):
         holders_data = response.json()
         
         # Save addresses to file
-        with open("found_addresses_6.txt", "w") as f:
+        with open("found_addresses_6.txt", "w", encoding='utf-8') as f:
             f.write(f"Token Holder Addresses for {token_address}\n")
             f.write("=" * 50 + "\n")
             f.write(f"Found at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}:\n\n")
@@ -960,7 +1150,7 @@ def option_4(api, console):
         timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
         csv_filename = f'{wallet_dir}/same_token_traders_{timestamp}.csv'
         
-        with open(csv_filename, 'w', newline='') as f:
+        with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After'])
             
@@ -1133,7 +1323,7 @@ def option_7(api, console):
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     csv_filename = f'reports/copy_sources_{target_wallet}_{timestamp}.csv'
     
-    with open(csv_filename, 'w', newline='') as f:
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['Wallet Address', 'Copy Count', 'Unique Tokens', 'Average Delay (s)'])
         
@@ -1156,7 +1346,7 @@ def option_7(api, console):
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     csv_filename = f'{wallet_dir}/copy_sources_{timestamp}.csv'
     
-    with open(csv_filename, 'w', newline='') as f:
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['Wallet Address', 'Copy Count', 'Unique Tokens', 'Average Delay (s)'])
         
@@ -1447,7 +1637,7 @@ def option_8(api, console):
     timestamp = datetime.now().strftime('%Y%m%d%H%M')
     csv_filename = f'reports/activity_heatmap_{target_wallet}_{timestamp}.csv'
     
-    with open(csv_filename, 'w', newline='') as f:
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         # Write header with hours
         header = ['Day'] + [f"{hour:02d}:00" for hour in range(24)]
@@ -1478,7 +1668,7 @@ def option_8(api, console):
     timestamp = datetime.now().strftime('%Y%m%d%H%M')
     csv_filename = f'{wallet_dir}/activity_heatmap_{timestamp}.csv'
     
-    with open(csv_filename, 'w', newline='') as f:
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         # Write header with hours
         header = ['Day'] + [f"{hour:02d}:00" for hour in range(24)]
