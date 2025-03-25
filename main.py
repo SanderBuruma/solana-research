@@ -1166,8 +1166,8 @@ def option_4(api, console):
             before_count = len(data['before'])
             after_count = len(data['after'])
 
-            # if before_count and after_count is < 2, don't add to table
-            if before_count < 2 and after_count < 2:
+            # Only show wallets with at least 5 trades before and after
+            if before_count < 5 or after_count < 5:
                 continue
             
             wallets_table.add_row(
