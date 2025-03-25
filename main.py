@@ -1157,7 +1157,11 @@ def option_4(api, console):
         # Sort by total count (before + after), then by after count, then by before count
         sorted_wallets = sorted(
             wallets.items(), 
-            key=lambda x: (len(x[1]['before']) + len(x[1]['after']), len(x[1]['after']), len(x[1]['before'])), 
+            key=lambda x: (
+                1 if len(x[1]['before']) > len(x[1]['after']) else 0, # Primary sort: whether before > after
+                len(x[1]['after']),   # Secondary sort: number of "after" trades
+                len(x[1]['before'])  # Tertiary sort: number of "before" trades
+            ),
             reverse=True
         )
         
