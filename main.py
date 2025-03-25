@@ -13,6 +13,43 @@ from rich.panel import Panel
 
 from utils.solscan import SolscanAPI, analyze_trades, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
 
+def generate_aggregate_filename(addresses, file_type, include_timestamp=True, batch_idx=None):
+    """
+    Generate a standardized filename for aggregate results based on wallet addresses.
+    
+    Args:
+        addresses (List[str]): List of wallet addresses to process
+        file_type (str): Type of the file (e.g., 'dex-trades', 'balance', 'option5')
+        include_timestamp (bool): Whether to include timestamp in filename
+        batch_idx (int, optional): Batch index number, if applicable
+        
+    Returns:
+        str: Path to the aggregate file
+    """
+    # Extract first two characters from each address
+    prefixes = set()
+    for addr in addresses:
+        if len(addr) >= 2:  # Ensure address is long enough
+            prefixes.add(addr[:2])
+    
+    # Sort and join the prefixes
+    prefix_str = "-".join(sorted(prefixes)) if prefixes else "unknown"
+    
+    # Generate timestamp if needed
+    timestamp_str = ""
+    if include_timestamp:
+        timestamp_str = f"-{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
+    
+    # Add batch info if provided
+    batch_str = ""
+    if batch_idx is not None:
+        batch_str = f"-batch{batch_idx}"
+    
+    # Create reports directory if it doesn't exist
+    os.makedirs("reports", exist_ok=True)
+    
+    return f"reports/aggregate-{prefix_str}-{file_type}{batch_str}{timestamp_str}.csv"
+
 def deduplicate_addresses(addresses, console):
     """
     De-duplicate a list of addresses and report if duplicates were removed.
@@ -101,7 +138,6 @@ def print_usage():
     # Create a Markdown renderer and display the content
     markdown = Markdown(clean_readme)
     console.print(Panel(markdown, title="Solana Research Tool - Documentation", border_style="green", expand=False))
-    
 def option_1(api, console):       
     if len(sys.argv) < 3:
         print("Error: Address required for account balance")
@@ -345,7 +381,7 @@ def process_aggregate_balances(api, console, addresses):
     # Save aggregate data to CSV
     os.makedirs("reports", exist_ok=True)
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-    csv_filename = f"reports/aggregate_balance_{timestamp}.csv"
+    csv_filename = generate_aggregate_filename(addresses, "balance")
     
     with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
@@ -649,7 +685,7 @@ def option_3(api, console):
     
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     if aggregate_mode and len(addresses) > 1:
-        csv_filename = f'reports/aggregate-dex-trades-{timestamp}.csv'
+        csv_filename = generate_aggregate_filename(addresses, "dex-trades")
     else:
         csv_filename = f'{wallet_dir}/dex-trades-{timestamp}.csv'
 
@@ -767,7 +803,7 @@ def option_5(api, console):
     os.makedirs('reports', exist_ok=True)
     
     # Create master CSV filename
-    master_csv_filename = f'reports/{timestamp}-option5-master.csv'
+    master_csv_filename = generate_aggregate_filename(addresses, "option5-master")
     
     # Store all results for master CSV
     all_results = []
@@ -893,7 +929,7 @@ def option_5(api, console):
         
         # Save batch to CSV
         if batch_results:
-            batch_csv_filename = f'reports/{timestamp}-option5-batch{batch_idx}.csv'
+            batch_csv_filename = generate_aggregate_filename(batch_addresses, "option5", batch_idx=batch_idx)
             
             with open(batch_csv_filename, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=batch_results[0].keys())
