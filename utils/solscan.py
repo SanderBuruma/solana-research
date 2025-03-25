@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import re
 
 # Third-party imports
-import requests
+import cloudscraper
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -165,6 +165,7 @@ class SolscanAPI:
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
         }
         self.console = Console()
+        self.scraper = cloudscraper.create_scraper()
 
     def _make_request(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """
@@ -183,10 +184,10 @@ class SolscanAPI:
         
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, headers=self.headers)
+                response = self.scraper.get(url, headers=self.headers)
                 response.raise_for_status()
                 return response.json()
-            except requests.exceptions.RequestException as e:
+            except (cloudscraper.exceptions.CloudflareChallengeError) as e:
                 if attempt < max_retries - 1:
                     # Calculate wait time with 20% increase
                     wait_time = int(wait_time * 1.2)

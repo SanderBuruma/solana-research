@@ -6,7 +6,7 @@ import os
 import sys
 import re
 import csv
-import requests
+import cloudscraper
 import json
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -988,7 +988,8 @@ def option_6(api, console):
     }
     
     try:
-        response = requests.post(url, headers=headers, json=data)
+        scraper = cloudscraper.create_scraper()
+        response = scraper.post(url, headers=headers, json=data)
         response.raise_for_status()
         holders_data = response.json()
         
@@ -1009,7 +1010,7 @@ def option_6(api, console):
         console.print(f"\n[green]Total Addresses Found: {len(holders_data)}[/green]")
         console.print(f"[yellow]Addresses have been saved to found_addresses_6.txt[/yellow]")
         
-    except requests.exceptions.RequestException as e:
+    except (cloudscraper.exceptions.CloudflareChallengeError) as e:
         console.print(f"[red]Error fetching data: {str(e)}[/red]")
         sys.exit(1)
 
