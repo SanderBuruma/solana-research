@@ -3,6 +3,7 @@ import time
 import csv
 import random
 import string
+import re
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime, timedelta
 
@@ -140,13 +141,9 @@ class SolscanDefiActivity:
 class SolscanAPI:
     def __init__(self):
         self.base_url = 'https://api-v2.solscan.io/v2'
-        # Try to get token from environment, generate random if not available
-        auth_token = os.getenv('SOLSCAN_SOL_AUT')
-        if not auth_token:
-            auth_token = generate_random_token()
-            Console().print(f"\n[yellow]Warning: SOLSCAN_SOL_AUT not found in environment. Using generated token: {auth_token}\nSet it in the .env file to avoid this warning.[/yellow]")
         
-        self.headers = {
+        # Preset headers as fallback
+        self.preset_headers = {
             'accept': 'application/json, text/plain, */*',
             'accept-language': 'en-GB,en;q=0.8',
             'origin': 'https://solscan.io',
@@ -159,15 +156,20 @@ class SolscanAPI:
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-site',
             'sec-gpc': '1',
-            'sol-aut': auth_token,
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
         }
-        # join cfray to cookies if available
-        cf_clearance = os.getenv('CF_CLEARANCE')
-        if cf_clearance:
-            self.headers['cookie'] = f'cf_clearance={cf_clearance}'
+        
+        # Try to get headers from request.ps1
+        request_headers = self._parse_request_ps1()
+        if request_headers:
+            self.headers = request_headers
+            self.console = Console()
+            self.console.print("[green]Using headers from request.ps1[/green]")
+        else:
+            self.headers = self.preset_headers
+            self.console = Console()
+            self.console.print("[yellow]Using preset headers (request.ps1 not found or invalid)[/yellow]")
 
-        self.console = Console()
         self.scraper = cloudscraper.create_scraper()
         proxy_url = os.getenv('PROXY_URL')
         if os.getenv('PROXY_ENABLED') == 'True' and proxy_url:
@@ -177,6 +179,100 @@ class SolscanAPI:
             }
         else:
             self.proxies = None
+
+    def _parse_request_ps1(self) -> Optional[Dict[str, str]]:
+        """
+        Parse request.ps1 file to extract headers and cookies.
+        Returns a dictionary of headers if found, None otherwise.
+        """
+        try:
+            # in the dev console network requests, copy as curl ( windows ) a solscan.io dextrading request to request.ps1
+            if not os.path.exists('request.ps1'):
+                return None
+                
+            with open('request.ps1', 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            # Extract headers from curl command
+            headers = {}
+            
+            # Extract User-Agent
+            user_agent_match = re.search(r'User-Agent: ([^"]+)', content)
+            if user_agent_match:
+                headers['user-agent'] = user_agent_match.group(1)
+                
+            # Extract Accept
+            accept_match = re.search(r'Accept: ([^"]+)', content)
+            if accept_match:
+                headers['accept'] = accept_match.group(1)
+                
+            # Extract Accept-Language
+            accept_lang_match = re.search(r'Accept-Language: ([^"]+)', content)
+            if accept_lang_match:
+                headers['accept-language'] = accept_lang_match.group(1)
+                
+            # Extract Accept-Encoding
+            accept_enc_match = re.search(r'Accept-Encoding: ([^"]+)', content)
+            if accept_enc_match:
+                headers['accept-encoding'] = accept_enc_match.group(1)
+                
+            # Extract Referer
+            referer_match = re.search(r'Referer: ([^"]+)', content)
+            if referer_match:
+                headers['referer'] = referer_match.group(1)
+                
+            # Extract sol-aut
+            sol_aut_match = re.search(r'sol-aut: ([^"]+)', content)
+            if sol_aut_match:
+                headers['sol-aut'] = sol_aut_match.group(1)
+                
+            # Extract Origin
+            origin_match = re.search(r'Origin: ([^"]+)', content)
+            if origin_match:
+                headers['origin'] = origin_match.group(1)
+                
+            # Extract Sec-GPC
+            sec_gpc_match = re.search(r'Sec-GPC: ([^"]+)', content)
+            if sec_gpc_match:
+                headers['sec-gpc'] = sec_gpc_match.group(1)
+                
+            # Extract Connection
+            connection_match = re.search(r'Connection: ([^"]+)', content)
+            if connection_match:
+                headers['connection'] = connection_match.group(1)
+                
+            # Extract Cookie
+            cookie_match = re.search(r'Cookie: ([^"]+)', content)
+            if cookie_match:
+                headers['cookie'] = cookie_match.group(1)
+                
+            # Extract Sec-Fetch headers
+            sec_fetch_dest_match = re.search(r'Sec-Fetch-Dest: ([^"]+)', content)
+            if sec_fetch_dest_match:
+                headers['sec-fetch-dest'] = sec_fetch_dest_match.group(1)
+                
+            sec_fetch_mode_match = re.search(r'Sec-Fetch-Mode: ([^"]+)', content)
+            if sec_fetch_mode_match:
+                headers['sec-fetch-mode'] = sec_fetch_mode_match.group(1)
+                
+            sec_fetch_site_match = re.search(r'Sec-Fetch-Site: ([^"]+)', content)
+            if sec_fetch_site_match:
+                headers['sec-fetch-site'] = sec_fetch_site_match.group(1)
+                
+            # Extract TE
+            te_match = re.search(r'TE: ([^"]+)', content)
+            if te_match:
+                headers['te'] = te_match.group(1)
+                
+            # Only return headers if we found at least the essential ones
+            if 'user-agent' in headers and 'accept' in headers and 'cookie' in headers:
+                return headers
+                
+            return None
+            
+        except Exception as e:
+            self.console.print(f"[yellow]Error parsing request.ps1: {str(e)}[/yellow]")
+            return None
 
     def _make_request(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """
