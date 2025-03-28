@@ -138,62 +138,6 @@ def print_usage():
     # Create a Markdown renderer and display the content
     markdown = Markdown(clean_readme)
     console.print(Panel(markdown, title="Solana Research Tool - Documentation", border_style="green", expand=False))
-def option_1(api, console):       
-    if len(sys.argv) < 3:
-        print("Error: Address required for account balance")
-        print_usage()
-        sys.exit(1)
-    
-    # Parse arguments
-    args = sys.argv[2:]
-    aggregate_mode = False
-    addresses = []
-    
-    # Check for aggregation flag
-    if "-a" in args:
-        aggregate_mode = True
-        args.remove("-a")
-    
-    # Process input addresses
-    if args and args[0].endswith('.txt'):
-        # Reading from a text file
-        file_path = args[0]
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                # Find all Solana addresses (base58 strings of 43-44 characters)
-                found_addresses = re.findall(r'\b[a-zA-Z0-9]{43,44}\b', content)
-                if not found_addresses:
-                    console.print(f"[red]No valid Solana addresses found in {file_path}[/red]")
-                    sys.exit(1)
-                addresses.extend(found_addresses)
-                console.print(f"[green]Found {len(addresses)} addresses in {file_path}[/green]")
-        except FileNotFoundError:
-            console.print(f"[red]Error: File {file_path} not found[/red]")
-            sys.exit(1)
-        except Exception as e:
-            console.print(f"[red]Error reading file: {str(e)}[/red]")
-            sys.exit(1)
-    else:
-        # Use command line arguments as addresses
-        addresses = args
-    
-    # De-duplicate addresses
-    addresses = deduplicate_addresses(addresses, console)
-    
-    if not addresses:
-        console.print("[red]No valid addresses provided[/red]")
-        sys.exit(1)
-    
-    # Process in aggregate mode or individual mode
-    if aggregate_mode:
-        console.print(f"[yellow]Processing {len(addresses)} addresses in aggregate mode[/yellow]")
-        process_aggregate_balances(api, console, addresses)
-    else:
-        # Process each address individually
-        for address in addresses:
-            console.print(f"\n[yellow]Processing address: [cyan]{address}[/cyan][/yellow]")
-            process_single_balance(api, console, address)
 
 def process_single_balance(api, console, address):
     """Process balance for a single address"""
@@ -379,6 +323,62 @@ def process_aggregate_balances(api, console, addresses):
     
     console.print(f"\n[yellow]Report saved to {csv_file}[/yellow]")
 
+def option_1(api, console):       
+    if len(sys.argv) < 3:
+        print("Error: Address required for account balance")
+        print_usage()
+        sys.exit(1)
+    
+    # Parse arguments
+    args = sys.argv[2:]
+    aggregate_mode = False
+    addresses = []
+    
+    # Check for aggregation flag
+    if "-a" in args:
+        aggregate_mode = True
+        args.remove("-a")
+    
+    # Process input addresses
+    if args and args[0].endswith('.txt'):
+        # Reading from a text file
+        file_path = args[0]
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # Find all Solana addresses (base58 strings of 43-44 characters)
+                found_addresses = re.findall(r'\b[a-zA-Z0-9]{43,44}\b', content)
+                if not found_addresses:
+                    console.print(f"[red]No valid Solana addresses found in {file_path}[/red]")
+                    sys.exit(1)
+                addresses.extend(found_addresses)
+                console.print(f"[green]Found {len(addresses)} addresses in {file_path}[/green]")
+        except FileNotFoundError:
+            console.print(f"[red]Error: File {file_path} not found[/red]")
+            sys.exit(1)
+        except Exception as e:
+            console.print(f"[red]Error reading file: {str(e)}[/red]")
+            sys.exit(1)
+    else:
+        # Use command line arguments as addresses
+        addresses = args
+    
+    # De-duplicate addresses
+    addresses = deduplicate_addresses(addresses, console)
+    
+    if not addresses:
+        console.print("[red]No valid addresses provided[/red]")
+        sys.exit(1)
+    
+    # Process in aggregate mode or individual mode
+    if aggregate_mode:
+        console.print(f"[yellow]Processing {len(addresses)} addresses in aggregate mode[/yellow]")
+        process_aggregate_balances(api, console, addresses)
+    else:
+        # Process each address individually
+        for address in addresses:
+            console.print(f"\n[yellow]Processing address: [cyan]{address}[/cyan][/yellow]")
+            process_single_balance(api, console, address)
 def option_2(api, console):
     if len(sys.argv) != 3:
         print("Error: Address required for transaction history")
@@ -700,6 +700,196 @@ def option_3(api, console):
     else:
         console.print(f"\n[yellow]Report saved to {csv_filename}[/yellow]")
 
+def option_4(api, console):
+    """
+    Detect wallets that bought the same tokens as the target wallet
+    
+    Shows a table with wallets and counts of:
+    - Number of unique tokens bought ≤30 seconds BEFORE the target
+    - Number of unique tokens bought ≤30 seconds AFTER the target
+    """
+    if len(sys.argv) < 3:
+        print("Error: Wallet address required for wallets analysis")
+        print_usage()
+        sys.exit(1)
+    
+    # Parse arguments for parameters
+    defi_days = None
+    args = sys.argv[2:]  # Skip the program name and option flag
+    
+    # Lists to store addresses and parameters
+    target_wallets = []
+    
+    # Extract parameters and addresses
+    i = 0
+    while i < len(args):
+        if args[i].startswith('--defi_days='):
+            try:
+                defi_days = int(args[i].split('=')[1])
+                console.print(f"[yellow]Filtering transactions to the last {defi_days} days[/yellow]")
+            except (ValueError, IndexError):
+                console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
+                sys.exit(1)
+        elif not args[i].startswith('--'):
+            # This is a target wallet address
+            target_wallets.append(args[i])
+        i += 1
+    
+    # If no addresses found, use the first argument
+    if not target_wallets:
+        target_wallets = [sys.argv[2]]
+    
+    # Process each wallet address
+    for target_wallet in target_wallets:
+        console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
+        
+        # Create a table to display results
+        wallets_table = Table(title=f"Wallets Trading Same Tokens as {target_wallet}")
+        wallets_table.add_column("Wallet Address", style="cyan")
+        wallets_table.add_column("Before (≤30s)", justify="right", style="yellow")
+        wallets_table.add_column("After (≤30s)", justify="right", style="green")
+        
+        # Dictionary to track wallet stats
+        wallets = {}  # Structure: {wallet_address: {'before': set(), 'after': set()}}
+        
+        trades = api.get_dex_trading_history(target_wallet, quiet=True, defi_days=defi_days)
+        
+        if not trades:
+            console.print("[red]No DEX trading history found for this wallet[/red]")
+            continue
+        
+        console.print(f"Found [green]{len(trades)}[/green] DEX trades")
+        
+        # Get token buys (where target wallet bought a token using SOL)
+        target_buys = []  # List of (token, trade) tuples
+        for trade in trades:
+            # Check if this is a buy (SOL -> token)
+            if is_sol_token(trade.token1) and not is_sol_token(trade.token2):
+                token = trade.token2
+                target_buys.append((token, trade))
+        
+        # Sort by timestamp (newest first)
+        target_buys.sort(key=lambda x: x[1].block_time, reverse=True)
+
+        # Take unique tokens
+        seen_tokens = set()
+        recent_buys = {}  # {token_address: trade_data}
+        for token, trade in target_buys:
+            if token not in seen_tokens:
+                seen_tokens.add(token)
+                recent_buys[token] = trade
+
+        # Reduce recent buys to 10 most recent trades
+        recent_buys = dict(list(recent_buys.items())[:50])
+        
+        console.print(f"Analyzing [green]{len(recent_buys)}[/green] unique token buys")
+        
+        # Print token addresses being analyzed
+        console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
+        for i, token in enumerate(recent_buys.keys(), 1):
+            console.print(f"{i}. [cyan]{token}[/cyan]")
+        console.print("")
+        
+        # Track progress
+        with console.status("[bold green]Scanning for wallets trading same tokens...[/bold green]", spinner="dots") as status:
+            # For each token, find wallets that bought within 30 seconds before/after the target
+            for token, target_trade in recent_buys.items():
+                token_name = token[:5] + "..." + token[-5:]
+                target_time = target_trade.block_time
+                
+                status.update(f"[bold green]Scanning transactions for token {token_name} (±30s window)...[/bold green]")
+                
+                # Calculate the time window: 30 seconds before and after the target trade
+                from_time = target_time - 30  # 30 seconds before target's trade
+                to_time = target_time + 30    # 30 seconds after target's trade
+                
+                # Get trades only within the time window using timestamp filtering
+                token_trades = api.get_dex_trading_history(
+                    token, 
+                    quiet=True,
+                    from_time=from_time,
+                    to_time=to_time
+                )
+                
+                # Find trades within the time window
+                for trade in token_trades:
+                    # Skip if it's not a buy (SOL -> token)
+                    if not is_sol_token(trade.token1) or is_sol_token(trade.token2):
+                        continue
+                        
+                    # Skip if it's the target wallet
+                    if trade.from_address == target_wallet:
+                        continue
+                    
+                    # Check timing relative to target's trade
+                    time_diff = trade.block_time - target_time
+                    
+                    # Initialize wallet data if not seen before
+                    if trade.from_address not in wallets:
+                        wallets[trade.from_address] = {'before': set(), 'after': set()}
+                    
+                    # Add token to the appropriate set based on timing
+                    if -30 <= time_diff < 0:  # Bought before target (within 30 seconds)
+                        wallets[trade.from_address]['before'].add(token)
+                    elif 0 < time_diff <= 30:  # Bought after target (within 30 seconds)
+                        wallets[trade.from_address]['after'].add(token)
+        
+        # Filter out wallets with no matches
+        wallets = {k: v for k, v in wallets.items() if v['before'] or v['after']}
+        
+        if not wallets:
+            console.print("[yellow]No wallets found trading the same tokens within the 30-second window[/yellow]")
+            continue
+        
+        # Sort by total count (before + after), then by after count, then by before count
+        sorted_wallets = sorted(
+            wallets.items(), 
+            key=lambda x: (
+                1 if len(x[1]['before']) > len(x[1]['after']) else 0, # Primary sort: whether before > after
+                len(x[1]['after']),   # Secondary sort: number of "after" trades
+                len(x[1]['before'])  # Tertiary sort: number of "before" trades
+            ),
+            reverse=True
+        )
+        
+        # Add rows to the table
+        for wallet, data in sorted_wallets:
+            before_count = len(data['before'])
+            after_count = len(data['after'])
+
+            # Only show wallets with at least 5 trades before and after
+            if before_count < 5 and after_count < 5:
+                continue
+            
+            wallets_table.add_row(
+                wallet,
+                str(before_count),
+                str(after_count)
+            )
+        
+        console.print(wallets_table)
+        
+        # Save results to CSV
+        # Create directory for this wallet address
+        wallet_dir = f'reports/{target_wallet}'
+        os.makedirs(wallet_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
+        csv_filename = f'{wallet_dir}/same_token_traders_{timestamp}.csv'
+        
+        with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After'])
+            
+            for wallet, data in sorted_wallets:
+                writer.writerow([
+                    wallet,
+                    len(data['before']),
+                    len(data['after'])
+                ])
+        
+        console.print(f"\n[yellow]Results for {target_wallet} saved to {csv_filename}[/yellow]")
+
 def option_5(api, console):
     if len(sys.argv) < 3:
         print("Error: At least one wallet address is required for option -5")
@@ -984,196 +1174,6 @@ def option_6(api, console):
     except (cloudscraper.exceptions.CloudflareChallengeError) as e:
         console.print(f"[red]Error fetching data: {str(e)}[/red]")
         sys.exit(1)
-
-def option_4(api, console):
-    """
-    Detect wallets that bought the same tokens as the target wallet
-    
-    Shows a table with wallets and counts of:
-    - Number of unique tokens bought ≤30 seconds BEFORE the target
-    - Number of unique tokens bought ≤30 seconds AFTER the target
-    """
-    if len(sys.argv) < 3:
-        print("Error: Wallet address required for wallets analysis")
-        print_usage()
-        sys.exit(1)
-    
-    # Parse arguments for parameters
-    defi_days = None
-    args = sys.argv[2:]  # Skip the program name and option flag
-    
-    # Lists to store addresses and parameters
-    target_wallets = []
-    
-    # Extract parameters and addresses
-    i = 0
-    while i < len(args):
-        if args[i].startswith('--defi_days='):
-            try:
-                defi_days = int(args[i].split('=')[1])
-                console.print(f"[yellow]Filtering transactions to the last {defi_days} days[/yellow]")
-            except (ValueError, IndexError):
-                console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
-                sys.exit(1)
-        elif not args[i].startswith('--'):
-            # This is a target wallet address
-            target_wallets.append(args[i])
-        i += 1
-    
-    # If no addresses found, use the first argument
-    if not target_wallets:
-        target_wallets = [sys.argv[2]]
-    
-    # Process each wallet address
-    for target_wallet in target_wallets:
-        console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
-        
-        # Create a table to display results
-        wallets_table = Table(title=f"Wallets Trading Same Tokens as {target_wallet}")
-        wallets_table.add_column("Wallet Address", style="cyan")
-        wallets_table.add_column("Before (≤30s)", justify="right", style="yellow")
-        wallets_table.add_column("After (≤30s)", justify="right", style="green")
-        
-        # Dictionary to track wallet stats
-        wallets = {}  # Structure: {wallet_address: {'before': set(), 'after': set()}}
-        
-        trades = api.get_dex_trading_history(target_wallet, quiet=True, defi_days=defi_days)
-        
-        if not trades:
-            console.print("[red]No DEX trading history found for this wallet[/red]")
-            continue
-        
-        console.print(f"Found [green]{len(trades)}[/green] DEX trades")
-        
-        # Get token buys (where target wallet bought a token using SOL)
-        target_buys = []  # List of (token, trade) tuples
-        for trade in trades:
-            # Check if this is a buy (SOL -> token)
-            if is_sol_token(trade.token1) and not is_sol_token(trade.token2):
-                token = trade.token2
-                target_buys.append((token, trade))
-        
-        # Sort by timestamp (newest first)
-        target_buys.sort(key=lambda x: x[1].block_time, reverse=True)
-
-        # Take unique tokens
-        seen_tokens = set()
-        recent_buys = {}  # {token_address: trade_data}
-        for token, trade in target_buys:
-            if token not in seen_tokens:
-                seen_tokens.add(token)
-                recent_buys[token] = trade
-
-        # Reduce recent buys to 10 most recent trades
-        recent_buys = dict(list(recent_buys.items())[:50])
-        
-        console.print(f"Analyzing [green]{len(recent_buys)}[/green] unique token buys")
-        
-        # Print token addresses being analyzed
-        console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
-        for i, token in enumerate(recent_buys.keys(), 1):
-            console.print(f"{i}. [cyan]{token}[/cyan]")
-        console.print("")
-        
-        # Track progress
-        with console.status("[bold green]Scanning for wallets trading same tokens...[/bold green]", spinner="dots") as status:
-            # For each token, find wallets that bought within 30 seconds before/after the target
-            for token, target_trade in recent_buys.items():
-                token_name = token[:5] + "..." + token[-5:]
-                target_time = target_trade.block_time
-                
-                status.update(f"[bold green]Scanning transactions for token {token_name} (±30s window)...[/bold green]")
-                
-                # Calculate the time window: 30 seconds before and after the target trade
-                from_time = target_time - 30  # 30 seconds before target's trade
-                to_time = target_time + 30    # 30 seconds after target's trade
-                
-                # Get trades only within the time window using timestamp filtering
-                token_trades = api.get_dex_trading_history(
-                    token, 
-                    quiet=True,
-                    from_time=from_time,
-                    to_time=to_time
-                )
-                
-                # Find trades within the time window
-                for trade in token_trades:
-                    # Skip if it's not a buy (SOL -> token)
-                    if not is_sol_token(trade.token1) or is_sol_token(trade.token2):
-                        continue
-                        
-                    # Skip if it's the target wallet
-                    if trade.from_address == target_wallet:
-                        continue
-                    
-                    # Check timing relative to target's trade
-                    time_diff = trade.block_time - target_time
-                    
-                    # Initialize wallet data if not seen before
-                    if trade.from_address not in wallets:
-                        wallets[trade.from_address] = {'before': set(), 'after': set()}
-                    
-                    # Add token to the appropriate set based on timing
-                    if -30 <= time_diff < 0:  # Bought before target (within 30 seconds)
-                        wallets[trade.from_address]['before'].add(token)
-                    elif 0 < time_diff <= 30:  # Bought after target (within 30 seconds)
-                        wallets[trade.from_address]['after'].add(token)
-        
-        # Filter out wallets with no matches
-        wallets = {k: v for k, v in wallets.items() if v['before'] or v['after']}
-        
-        if not wallets:
-            console.print("[yellow]No wallets found trading the same tokens within the 30-second window[/yellow]")
-            continue
-        
-        # Sort by total count (before + after), then by after count, then by before count
-        sorted_wallets = sorted(
-            wallets.items(), 
-            key=lambda x: (
-                1 if len(x[1]['before']) > len(x[1]['after']) else 0, # Primary sort: whether before > after
-                len(x[1]['after']),   # Secondary sort: number of "after" trades
-                len(x[1]['before'])  # Tertiary sort: number of "before" trades
-            ),
-            reverse=True
-        )
-        
-        # Add rows to the table
-        for wallet, data in sorted_wallets:
-            before_count = len(data['before'])
-            after_count = len(data['after'])
-
-            # Only show wallets with at least 5 trades before and after
-            if before_count < 5 and after_count < 5:
-                continue
-            
-            wallets_table.add_row(
-                wallet,
-                str(before_count),
-                str(after_count)
-            )
-        
-        console.print(wallets_table)
-        
-        # Save results to CSV
-        # Create directory for this wallet address
-        wallet_dir = f'reports/{target_wallet}'
-        os.makedirs(wallet_dir, exist_ok=True)
-        
-        timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
-        csv_filename = f'{wallet_dir}/same_token_traders_{timestamp}.csv'
-        
-        with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After'])
-            
-            for wallet, data in sorted_wallets:
-                writer.writerow([
-                    wallet,
-                    len(data['before']),
-                    len(data['after'])
-                ])
-        
-        console.print(f"\n[yellow]Results for {target_wallet} saved to {csv_filename}[/yellow]")
 
 def option_7(api, console):
     """
