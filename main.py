@@ -27,12 +27,12 @@ def generate_aggregate_filename(addresses, file_type, include_timestamp=True, ba
         str: Path to the aggregate file
     """
     # Extract first two characters from each address
-    prefixes = set()
+    prefixes = []
     for addr in addresses:
         if len(addr) >= 2:  # Ensure address is long enough
-            prefixes.add(addr[:2])
+            prefixes.append(addr[:2])
     
-    # Sort and join the prefixes
+    # Sort and join the prefixes with hyphens
     prefix_str = "-".join(sorted(prefixes)) if prefixes else "unknown"
     
     # Generate timestamp if needed
@@ -287,126 +287,97 @@ def process_single_balance(api, console, address):
         console.print("[yellow]No token account data found.[/yellow]")
 
 def process_aggregate_balances(api, console, addresses):
-    """Process balances for multiple addresses in aggregate mode"""
-    total_sol_balance = 0.0
-    total_token_value = 0.0
-    all_tokens = {}  # {token_address: (name, symbol, balance, value)}
-    total_addresses = len(addresses)
+    """Process multiple addresses and show aggregate balance"""
+    total_sol = 0
+    total_token_sol = 0
+    token_balances = {}
     
-    # Get SOL price once to use for all calculations
-    sol_price_data = api.get_token_price("So11111111111111111111111111111111111111112")
-    sol_price = sol_price_data.get("price_usdt", 0) if sol_price_data else 0
+    # Create reports directory if it doesn't exist
+    os.makedirs('reports', exist_ok=True)
     
-    console.print(f"SOL Price: ${sol_price:.2f}")
+    # Generate filename using the standardized format
+    csv_file = generate_aggregate_filename(addresses, "balance")
+    
+    # Create CSV file with headers if it doesn't exist
+    if not os.path.exists(csv_file):
+        with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+            f.write("timestamp,SOL balance,token SOL value,total SOL\n")
     
     # Process each address
-    for idx, address in enumerate(addresses, 1):
-        console.print(f"[cyan]Processing address {idx}/{total_addresses}: {address}[/cyan]")
+    for address in addresses:
+        try:
+            # Get SOL balance
+            sol_balance = api.get_account_balance(address)
+            if sol_balance is not None:
+                total_sol += sol_balance
+            
+            # Get token accounts
+            token_data = api.get_token_accounts(address)
+            if token_data and token_data.get("success") and token_data.get("data"):
+                tokens = token_data["data"].get("tokenAccounts", [])
+                for token in tokens:
+                    token_name = token.get("tokenName", "Unknown")
+                    token_symbol = token.get("tokenSymbol", "Unknown")
+                    token_address = token.get("tokenAddress", "Unknown")
+                    balance_token = int(float(token.get("balance", 0)))
+                    usd_value = token.get("value", 0)
+                    
+                    # Get SOL price for conversion
+                    sol_price_data = api.get_token_price("So11111111111111111111111111111111111111112")
+                    sol_price = sol_price_data.get("price_usdt", 0) if sol_price_data else 0
+                    
+                    if sol_price > 0:
+                        token_sol_value = (usd_value / sol_price)
+                        total_token_sol += token_sol_value
+                        
+                        # Track token balances
+                        if token_address in token_balances:
+                            token_balances[token_address]['amount'] += balance_token
+                            token_balances[token_address]['sol_value'] += token_sol_value
+                        else:
+                            token_balances[token_address] = {
+                                'amount': balance_token,
+                                'sol_value': token_sol_value,
+                                'name': token_name,
+                                'symbol': token_symbol
+                            }
         
-        # Get SOL balance
-        balance = api.get_account_balance(address)
-        if balance is not None:
-            total_sol_balance += balance
-            console.print(f"SOL Balance: {balance:.9f}")
-        else:
-            console.print(f"[red]Failed to fetch SOL balance for {address}[/red]")
+        except Exception as e:
+            console.print(f"[red]Error processing address {address}: {str(e)}[/red]")
+            continue
+    
+    # Calculate total
+    total = total_sol + total_token_sol
+    
+    # Save to CSV
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    with open(csv_file, 'a', newline='', encoding='utf-8') as f:
+        f.write(f"{timestamp},{total_sol:.4f},{total_token_sol:.4f},{total:.4f}\n")
+    
+    # Display results
+    console.print("\n[bold]Aggregate Balance Summary[/bold]")
+    console.print(f"Total SOL Balance: [green]{total_sol:.4f} ◎[/green]")
+    console.print(f"Total Token Value: [yellow]{total_token_sol:.4f} ◎[/yellow]")
+    console.print(f"Total Value: [bold cyan]{total:.4f} ◎[/bold cyan]")
+    
+    if token_balances:
+        console.print("\n[bold]Token Balances[/bold]")
+        token_table = Table(show_header=True, header_style="bold")
+        token_table.add_column("Token", style="dim")
+        token_table.add_column("Amount", justify="right", style="cyan")
+        token_table.add_column("Value (SOL)", justify="right", style="yellow")
         
-        # Get token balances
-        token_data = api.get_token_accounts(address)
-        if token_data and token_data.get("success") and token_data.get("data"):
-            tokens = token_data["data"].get("tokenAccounts", [])
-            for token in tokens:
-                token_name = token.get("tokenName", "Unknown")
-                token_symbol = token.get("tokenSymbol", "Unknown")
-                token_address = token.get("tokenAddress", "Unknown")
-                balance_token = int(float(token.get("balance", 0)))
-                usd_value = token.get("value", 0)
-                true_value_in_sol = (usd_value / sol_price) if sol_price > 0 else usd_value
-                
-                if balance_token == 0 or true_value_in_sol < 0.01:
-                    continue
-                
-                total_token_value += true_value_in_sol
-                
-                # Aggregate token data
-                if token_address in all_tokens:
-                    # Update existing token data
-                    current_balance, current_value = all_tokens[token_address][2:4]
-                    all_tokens[token_address] = (token_name, token_symbol, current_balance + balance_token, current_value + true_value_in_sol)
-                else:
-                    # Add new token
-                    all_tokens[token_address] = (token_name, token_symbol, balance_token, true_value_in_sol)
-    
-    # Calculate total value and percentages
-    total_value = total_sol_balance + total_token_value
-    sol_percentage = (total_sol_balance / total_value * 100) if total_value > 0 else 0
-    token_percentage = (total_token_value / total_value * 100) if total_value > 0 else 0
-    
-    # Print aggregate summary
-    console.print("\n[bold green]===== Aggregate Balance Summary =====[/bold green]")
-    summary = (f"\nTotal SOL:   {total_sol_balance:15.9f} SOL ([cyan]{sol_percentage:.1f}%[/cyan])\n"
-               f"Total Tokens: {total_token_value:15.9f} SOL ([cyan]{token_percentage:.1f}%[/cyan])\n"
-               f"Grand Total: {total_value:15.9f} SOL ([green]100%[/green])")
-    console.print(summary)
-    
-    # Create token summary table
-    token_table = Table(title="\nAggregate Token Holdings")
-    token_table.add_column("Token Address", style="dim")
-    token_table.add_column("Token Name", style="cyan")
-    token_table.add_column("Token Symbol", style="magenta")
-    token_table.add_column("Balance", justify="right", style="yellow")
-    token_table.add_column("Value in SOL", justify="right", style="green")
-    token_table.add_column("% of Total", justify="right", style="cyan")
-    
-    # Sort tokens by value
-    sorted_tokens = sorted(all_tokens.items(), key=lambda x: x[1][3], reverse=True)
-    
-    # Add tokens to the table
-    for token_address, (token_name, token_symbol, balance, value) in sorted_tokens:
-        # Format balance with k/m/b suffix
-        formatted_balance = format_token_amount(balance)
-        # Calculate percentage of total portfolio
-        token_percent = (value / total_value * 100) if total_value > 0 else 0
-        token_table.add_row(
-            token_address,
-            token_name,
-            token_symbol,
-            formatted_balance,
-            f"{value:.3f}",
-            f"{token_percent:.1f}%"
-        )
-    
-    console.print(token_table)
-    
-    # Save aggregate data to CSV
-    os.makedirs("reports", exist_ok=True)
-    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
-    csv_filename = generate_aggregate_filename(addresses, "balance")
-    
-    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(["Report Type", "Aggregate Balance"])
-        writer.writerow(["Timestamp", timestamp])
-        writer.writerow(["Addresses Analyzed", total_addresses])
-        writer.writerow([])
-        writer.writerow(["SOL Balance", f"{total_sol_balance:.9f}"])
-        writer.writerow(["Token Value (in SOL)", f"{total_token_value:.9f}"])
-        writer.writerow(["Total Value", f"{total_value:.9f}"])
-        writer.writerow([])
-        writer.writerow(["Token Address", "Token Name", "Token Symbol", "Balance", "Value in SOL", "% of Portfolio"])
-        
-        for token_address, (token_name, token_symbol, balance, value) in sorted_tokens:
-            token_percent = (value / total_value * 100) if total_value > 0 else 0
-            writer.writerow([
-                token_address,
+        for token_address, data in token_balances.items():
+            token_name = data['name'] or token_address[:8] + "..."
+            token_table.add_row(
                 token_name,
-                token_symbol,
-                balance,
-                f"{value:.9f}",
-                f"{token_percent:.2f}%"
-            ])
+                f"{data['amount']:.4f}",
+                f"{data['sol_value']:.4f} ◎"
+            )
+        
+        console.print(token_table)
     
-    console.print(f"\n[yellow]Aggregate balance data saved to {csv_filename}[/yellow]")
+    console.print(f"\n[yellow]Report saved to {csv_file}[/yellow]")
 
 def option_2(api, console):
     if len(sys.argv) != 3:
