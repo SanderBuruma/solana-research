@@ -1,12 +1,10 @@
 import os
 import time
-import json
 import csv
 import random
 import string
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime, timedelta
-import re
 
 # Third-party imports
 import cloudscraper
@@ -164,8 +162,21 @@ class SolscanAPI:
             'sol-aut': auth_token,
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
         }
+        # join cfray to cookies if available
+        cf_clearance = os.getenv('CF_CLEARANCE')
+        if cf_clearance:
+            self.headers['cookie'] = f'cf_clearance={cf_clearance}'
+
         self.console = Console()
         self.scraper = cloudscraper.create_scraper()
+        proxy_url = os.getenv('PROXY_URL')
+        if os.getenv('PROXY_ENABLED') == 'True' and proxy_url:
+            self.proxies = {
+                'http': f'{proxy_url}',
+                'https':f'{proxy_url}'
+            }
+        else:
+            self.proxies = None
 
     def _make_request(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """
