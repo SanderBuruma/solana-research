@@ -95,14 +95,14 @@ def format_mc(mc):
         return f"{mc:.1f}"
 
 def format_seconds(seconds):
-    """Format seconds into a human-readable string (days, hours, minutes)."""
+    """Format seconds into a human-readable string (days, hours, minutes, seconds)."""
     seconds_td = timedelta(seconds=seconds)
     if seconds_td.days > 0:
         return f"{seconds_td.days}d {seconds_td.seconds//3600}h {(seconds_td.seconds%3600)//60}m"
     elif seconds_td.seconds//3600 > 0:
         return f"{seconds_td.seconds//3600}h {(seconds_td.seconds%3600)//60}m"
     else:
-        return f"{(seconds_td.seconds%3600)//60}m"
+        return f"{(seconds_td.seconds%3600)//60}m {seconds_td.seconds%60}s"
 
 def print_usage():
     """
@@ -997,7 +997,7 @@ def option_5(api, console):
                 "Profitable/Total": tx_summary['win_rate_ratio'],
                 "Median Investment": f"{tx_summary['median_investment']:.3f}",
                 "Median ROI %": f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
-                "Median Hold Time": format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
+                "Median Hold Time": format_seconds(tx_summary['median_hold_time']),
                 "win_rate": tx_summary['win_rate'],
                 "med_investment": tx_summary['median_investment'],
                 "med_roi": tx_summary['median_roi_percent'],
@@ -1035,7 +1035,7 @@ def option_5(api, console):
                 f"[{win_rate_color}]{tx_summary['win_rate']:.1f}% ({tx_summary['win_rate_ratio']})[/{win_rate_color}]",
                 f"{tx_summary['median_investment']:.3f} ◎",
                 f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
-                format_duration(timedelta(seconds=tx_summary['median_hold_time'])),
+                format_seconds(tx_summary['median_hold_time']),
                 format_mc(tx_summary['median_market_entry']),
                 f"{tx_summary['median_mc_percentage']:.4f}%",
             )
