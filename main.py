@@ -13,6 +13,26 @@ from rich.panel import Panel
 
 from utils.solscan import SolscanAPI, analyze_trades, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
 
+def get_addresses_from_args(args) -> list[str]:
+    """
+    Get addresses from command line arguments.
+    
+    Args:
+        args (List[str]): Command line arguments
+
+    """
+    args = sys.argv[2:]
+    addresses = []
+    for arg in args:
+        # find all matches of the regex pattern in each arg
+        m = re.findall(r'[a-zA-Z0-9]{43,44}', arg)
+        if m:
+            print(f"Found {len(m)} addresses in {arg}")
+            addresses.extend(m)
+
+    # Deduplicate addresses
+    return list(set(addresses))
+
 def generate_aggregate_filename(addresses, file_type, include_timestamp=True, batch_idx=None, include_timestamp_str=True):
     """
     Generate a standardized filename for aggregate results based on wallet addresses.
@@ -53,26 +73,6 @@ def generate_aggregate_filename(addresses, file_type, include_timestamp=True, ba
         return f"reports/aggregate-{prefix_str}-{file_type}{batch_str}{timestamp_str}.csv"
     else:
         return f"reports/aggregate-{prefix_str}-{file_type}{batch_str}.csv"
-
-def deduplicate_addresses(addresses, console):
-    """
-    De-duplicate a list of addresses and report if duplicates were removed.
-    
-    Args:
-        addresses (List[str]): List of addresses to de-duplicate
-        console (Console): Rich console for output
-        
-    Returns:
-        List[str]: De-duplicated list of addresses
-    """
-    original_count = len(addresses)
-    unique_addresses = list(set(addresses))  # Convert to set and back to list to remove duplicates
-    duplicates_removed = original_count - len(unique_addresses)
-    
-    if duplicates_removed > 0:
-        console.print(f"[yellow]Removed {duplicates_removed} duplicate address{'es' if duplicates_removed > 1 else ''} from the input[/yellow]")
-    
-    return unique_addresses
 
 def is_sol_token(token: str) -> bool:
     """Check if a token address is SOL"""
@@ -336,39 +336,12 @@ def option_1(api, console):
     # Parse arguments
     args = sys.argv[2:]
     aggregate_mode = False
-    addresses = []
+    addresses = get_addresses_from_args(sys.argv)
     
     # Check for aggregation flag
     if "-a" in args:
         aggregate_mode = True
         args.remove("-a")
-    
-    # Process input addresses
-    if args and args[0].endswith('.txt'):
-        # Reading from a text file
-        file_path = args[0]
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                # Find all Solana addresses (base58 strings of 43-44 characters)
-                found_addresses = re.findall(r'\b[a-zA-Z0-9]{43,44}\b', content)
-                if not found_addresses:
-                    console.print(f"[red]No valid Solana addresses found in {file_path}[/red]")
-                    sys.exit(1)
-                addresses.extend(found_addresses)
-                console.print(f"[green]Found {len(addresses)} addresses in {file_path}[/green]")
-        except FileNotFoundError:
-            console.print(f"[red]Error: File {file_path} not found[/red]")
-            sys.exit(1)
-        except Exception as e:
-            console.print(f"[red]Error reading file: {str(e)}[/red]")
-            sys.exit(1)
-    else:
-        # Use command line arguments as addresses
-        addresses = args
-    
-    # De-duplicate addresses
-    addresses = deduplicate_addresses(addresses, console)
     
     if not addresses:
         console.print("[red]No valid addresses provided[/red]")
@@ -388,7 +361,10 @@ def option_2(api, console):
         print("Error: Address required for transaction history")
         print_usage()
         sys.exit(1)
-    address = sys.argv[2]
+    addresses = get_addresses_from_args(sys.argv)
+    if len(addresses) != 1: raise ValueError("Error: Address required for transaction history")
+    address = addresses[0]
+
     page_size = 10
     all_transactions = []
     page = 1
@@ -416,7 +392,7 @@ def option_3(api, console):
     
     # Check if we're aggregating multiple addresses
     aggregate_mode = False
-    addresses = []
+    addresses = get_addresses_from_args(sys.argv)
     
     # Parse arguments and extract command flags
     defi_days = None
@@ -435,9 +411,6 @@ def option_3(api, console):
         elif args[i] == "-f" and i+1 < len(args):
             # Skip the -f parameter and its value
             i += 1
-        elif not args[i].startswith('-'):
-            # This is an address
-            addresses.append(args[i])
         i += 1
     
     # If no addresses were found, use the first argument as a single address
@@ -722,7 +695,7 @@ def option_4(api, console):
     args = sys.argv[2:]  # Skip the program name and option flag
     
     # Lists to store addresses and parameters
-    target_wallets = []
+    target_wallets = get_addresses_from_args(sys.argv)
     
     # Extract parameters and addresses
     i = 0
@@ -900,8 +873,11 @@ def option_5(api, console):
         print_usage()
         sys.exit(1)
 
-    addresses = []
-    first_arg = sys.argv[2]
+    addresses = get_addresses_from_args(sys.argv)
+    if len(addresses) == 0:
+        print("Error: At least one wallet address is required for option -5")
+        print_usage()
+        sys.exit(1)
     
     # Parse arguments for parameter flags
     days_filter = None
@@ -935,31 +911,6 @@ def option_5(api, console):
         print("Error: At least one wallet address is required for option -5")
         print_usage()
         sys.exit(1)
-
-    # Check if first argument is a .txt file
-    if first_arg.endswith('.txt'):
-        try:
-            with open(first_arg, 'r', encoding='utf-8') as f:
-                content = f.read()
-                # Find all Solana addresses (base58 strings of 43-44 characters)
-                found_addresses = re.findall(r'\b[a-zA-Z0-9]{43,44}\b', content)
-                if not found_addresses:
-                    console.print(f"[red]No valid Solana addresses found in {first_arg}[/red]")
-                    sys.exit(1)
-                addresses.extend(found_addresses)
-                console.print(f"[green]Found {len(addresses)} addresses in {first_arg}[/green]")
-        except FileNotFoundError:
-            console.print(f"[red]Error: File {first_arg} not found[/red]")
-            sys.exit(1)
-        except Exception as e:
-            console.print(f"[red]Error reading file: {str(e)}[/red]")
-            sys.exit(1)
-    else:
-        # Use command line arguments as addresses (excluding any options)
-        addresses = args
-
-    # De-duplicate addresses to avoid processing the same address multiple times
-    addresses = deduplicate_addresses(addresses, console)
 
     # Create the base timestamp for all batch files
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
@@ -1119,7 +1070,12 @@ def option_6(api, console):
         print("Error: One token contract address is required for option -6")
         print_usage()
         sys.exit(1)
-    token_address = sys.argv[2:]
+    token_address = get_addresses_from_args(sys.argv)
+    if len(token_address) != 1:
+        print("Error: One token contract address is required for option -6")
+        print_usage()
+        sys.exit(1)
+    token_address = token_address[0]
     
     # Load environment variables
     load_dotenv()
@@ -1179,204 +1135,6 @@ def option_6(api, console):
         console.print(f"[red]Error fetching data: {str(e)}[/red]")
         sys.exit(1)
 
-def option_7(api, console):
-    """
-    Detect wallets that the target wallet might be copy trading from
-    
-    Steps:
-    1. Get the first 50 token buys for the target wallet
-    2. For each token, get all trades and find wallets that bought within 30 seconds BEFORE the target
-       (uses optimized time-filtered search to reduce API calls)
-    3. Track wallets that show up multiple times (suggesting the target is copy trading them)
-    4. Display summary of potential trading signals
-    """
-    if len(sys.argv) < 3:
-        print("Error: Wallet address required for copy trading source detection")
-        print_usage()
-        sys.exit(1)
-    
-    # Parse arguments for parameters
-    defi_days = None
-    args = sys.argv[2:]  # Skip the program name and option flag
-    
-    target_wallet = None
-    
-    # Extract parameters
-    i = 0
-    while i < len(args):
-        if args[i].startswith('--defi_days='):
-            try:
-                defi_days = int(args[i].split('=')[1])
-                console.print(f"[yellow]Filtering transactions to the last {defi_days} days[/yellow]")
-            except (ValueError, IndexError):
-                console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
-                sys.exit(1)
-        elif not args[i].startswith('--'):
-            # This is the target wallet address
-            target_wallet = args[i]
-        i += 1
-    
-    if not target_wallet:
-        target_wallet = sys.argv[2]  # Fallback to first argument
-    
-    # Create a table to display results
-    copy_sources_table = Table(title=f"Wallets {target_wallet} Potentially Copy Trades From")
-    copy_sources_table.add_column("Wallet Address", style="cyan")
-    copy_sources_table.add_column("Copy Count", justify="right", style="yellow")
-    copy_sources_table.add_column("Tokens", style="green")
-    copy_sources_table.add_column("Avg Time Delay (s)", justify="right", style="magenta")
-    
-    # Dictionary to track potential copy sources
-    copy_sources = {}  # Structure: {wallet_address: {'count': int, 'tokens': set, 'delays': list}}
-    
-    console.print(f"\n[yellow]Analyzing trading history for {target_wallet}...[/yellow]")
-    trades = api.get_dex_trading_history(target_wallet, quiet=True, defi_days=defi_days)
-    
-    if not trades:
-        console.print("[red]No DEX trading history found for this wallet[/red]")
-        return
-    
-    console.print(f"Found [green]{len(trades)}[/green] DEX trades")
-    
-    # Get the 10 most recent token buys (where target wallet bought a token using SOL)
-    all_token_buys = []  # List of (token, trade) tuples
-    for trade in trades:
-        # Check if this is a buy (SOL -> token)
-        if is_sol_token(trade.token1) and not is_sol_token(trade.token2):
-            token = trade.token2
-            all_token_buys.append((token, trade))
-    
-    # Sort by timestamp (newest first)
-    all_token_buys.sort(key=lambda x: x[1].block_time, reverse=True)
-    
-    # Take the 10 most recent unique tokens
-    seen_tokens = set()
-    recent_buys = {}  # {token_address: trade_data}
-    for token, trade in all_token_buys:
-        if token not in seen_tokens:
-            seen_tokens.add(token)
-            recent_buys[token] = trade
-            if len(recent_buys) >= 10:
-                break
-    
-    console.print(f"Analyzing [green]{len(recent_buys)}[/green] most recent unique token buys")
-    
-    # Print token addresses being analyzed
-    console.print("\n[bold yellow]Tokens being analyzed:[/bold yellow]")
-    for i, token in enumerate(recent_buys.keys(), 1):
-        console.print(f"{i}. [cyan]{token}[/cyan]")
-    console.print("")
-    
-    # Track progress
-    with console.status("[bold green]Scanning for trading signal sources...[/bold green]", spinner="dots") as status:
-        # For each token, find wallets that bought within 30 seconds BEFORE the target
-        for token, target_trade in recent_buys.items():
-            token_name = token[:5] + "..." + token[-5:]
-            target_time = target_trade.block_time
-            
-            status.update(f"[bold green]Scanning transactions for token {token_name} (30s window before target trade)...[/bold green]")
-            
-            # Calculate the time window: 30 seconds before and after the target trade
-            from_time = target_time - 30  # 30 seconds before target's trade
-            to_time = target_time + 30    # 30 seconds after target's trade
-            
-            # Get trades only within the time window using timestamp filtering
-            token_trades = api.get_dex_trading_history(
-                token, 
-                quiet=True,
-                from_time=from_time,
-                to_time=to_time
-            )
-            
-            # Find trades within the time window
-            for trade in token_trades:
-                # Skip if it's not a buy (SOL -> token)
-                if not is_sol_token(trade.token1) or is_sol_token(trade.token2):
-                    continue
-                    
-                # Skip if it's the target wallet
-                if trade.from_address == target_wallet:
-                    continue
-                
-                # Check timing relative to target's trade
-                time_diff = trade.block_time - target_time
-                
-                # Initialize wallet data if not seen before
-                if trade.from_address not in copy_sources:
-                    copy_sources[trade.from_address] = {'count': 0, 'tokens': set(), 'delays': []}
-                
-                # Add token to the appropriate set based on timing
-                if -30 <= time_diff < 0:  # Bought before target (within 30 seconds)
-                    copy_sources[trade.from_address]['count'] += 1
-                    copy_sources[trade.from_address]['tokens'].add(token)
-                    copy_sources[trade.from_address]['delays'].append(-time_diff)  # Convert to positive delay
-    
-    # Filter out wallets that only appeared once
-    copy_sources = {k: v for k, v in copy_sources.items() if v['count'] > 1}
-    
-    if not copy_sources:
-        console.print("[yellow]No potential trading signal sources found[/yellow]")
-        return
-    
-    # Sort by copy count (descending)
-    sorted_copy_sources = sorted(copy_sources.items(), key=lambda x: x[1]['count'], reverse=True)
-    
-    # Add rows to the table
-    for wallet, data in sorted_copy_sources:
-        avg_delay = sum(data['delays']) / len(data['delays'])
-        tokens_str = f"{len(data['tokens'])} unique tokens"
-        
-        copy_sources_table.add_row(
-            wallet,
-            str(data['count']),
-            tokens_str,
-            f"{avg_delay:.2f}"
-        )
-    
-    console.print(copy_sources_table)
-    
-    # Save results to CSV
-    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
-    csv_filename = f'reports/copy_sources_{target_wallet}_{timestamp}.csv'
-    
-    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(['Wallet Address', 'Copy Count', 'Unique Tokens', 'Average Delay (s)'])
-        
-        for wallet, data in sorted_copy_sources:
-            avg_delay = sum(data['delays']) / len(data['delays'])
-            writer.writerow([
-                wallet,
-                data['count'],
-                len(data['tokens']),
-                f"{avg_delay:.2f}"
-            ])
-    
-    console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
-
-    # Save results to CSV
-    # Create directory for this wallet address
-    wallet_dir = f'reports/{target_wallet}'
-    os.makedirs(wallet_dir, exist_ok=True)
-    
-    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
-    csv_filename = f'{wallet_dir}/copy_sources_{timestamp}.csv'
-    
-    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(['Wallet Address', 'Copy Count', 'Unique Tokens', 'Average Delay (s)'])
-        
-        for wallet, data in sorted_copy_sources:
-            avg_delay = sum(data['delays']) / len(data['delays'])
-            writer.writerow([
-                wallet,
-                data['count'],
-                len(data['tokens']),
-                f"{avg_delay:.2f}"
-            ])
-    
-    console.print(f"\n[yellow]Results saved to {csv_filename}[/yellow]")
-
 def option_8(api, console):
     """
     Generate a heatmap visualization of DeFi activity by hour and day of week
@@ -1394,7 +1152,12 @@ def option_8(api, console):
     defi_days = None
     args = sys.argv[2:]  # Skip the program name and option flag
     
-    target_wallet = None
+    target_wallet = get_addresses_from_args(sys.argv)
+    if len(target_wallet) != 1:
+        print("Error: Wallet address required for activity heatmap")
+        print_usage()
+        sys.exit(1)
+    target_wallet = target_wallet[0]
     
     # Extract parameters
     i = 0
@@ -1734,8 +1497,6 @@ def main():
         option_5(api, console)
     elif option == "-6":
         option_6(api, console)
-    elif option == "-7":
-        option_7(api, console)
     elif option == "-8":
         option_8(api, console)
     else:
