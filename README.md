@@ -10,7 +10,7 @@ A powerful Python-based command-line tool for comprehensive analysis of Solana b
   - Displays current SOL balance with 9 decimal precision
   - Shows all token holdings with USD values
   - Calculates total portfolio value in SOL and USD
-  - Saves balance data to CSV for historical tracking
+  - Saves balance data to CSV for historical tracking, adding one row per run
 
 - **-2 <address>**: View Detailed Transaction History
   - Retrieves the last 100 transactions for a Solana address
@@ -31,17 +31,33 @@ A powerful Python-based command-line tool for comprehensive analysis of Solana b
   - Period-based ROI analysis (24h, 7d, 30d)
   - Filtering transactions by age with `--defi_days` parameter
   - Saves detailed reports to CSV files
+  - When multiple addresses are added they are aggregated together and treated as one
 
-- **-4 <address1> [address2] [address3] ...**: Detect Copy Traders
-  - Supports analyzing multiple wallet addresses in a single command
-  - Identifies wallets that may be copy trading the target wallet(s)
-  - Analyzes the first 10 token buys from each target wallet
-  - Detects other wallets that bought the same tokens within 30 seconds
-  - Tracks copy frequency, token diversity, and timing patterns
-  - Generates a ranked list of potential copy traders for each address
+- **-4 <address1>: Detect Copy Traders
+  - Makes a list of copy traders and those they copy. 
+  - 50 tokens recently traded by the target are analyzed 
+  - A list is returned of addresses that traded the same token before or after the target.
+
+- **-5 <address> [<address> ...]**: Comparative DeFi Summary
+  - Analyze multiple wallets simultaneously
+  - Read addresses from command line or text file
+  - Auto-extracts Solana addresses from text using regex
+  - Comparative metrics across wallets including:
+    - ROI percentages (24h, 7d, 30d)
+    - Win rates and median statistics
+    - Fee analysis and efficiency metrics
+    - Trade volume and activity levels
+  - Filtering by token age with `--days` parameter
   - Filtering transactions by age with `--defi_days` parameter
-  - Provides statistical insights on copying behavior
-  - Exports findings to a timestamped CSV report for each address
+  - Color-coded performance indicators
+  - Exports comprehensive CSV report
+
+- **-6 <token_address>**: Token Holder Analytics
+  - Fetch detailed holder statistics for any Solana token
+  - Categorized holder breakdown by wallet size
+  - Analysis of token distribution and concentration
+  - Whale monitoring and distribution metrics
+  - Saves holder data to CSV with timestamp
 
 - **-7 <address>**: Find Copy Trading Sources
   - Reverse of option -4: identifies wallets that the target wallet may be copying
@@ -61,31 +77,6 @@ A powerful Python-based command-line tool for comprehensive analysis of Solana b
   - Filtering transactions by age with `--defi_days` parameter
   - Provides timezone probability analysis
   - Exports all data to CSV for further analysis
-
-### 📊 Multi-Wallet Analytics
-
-- **-5 <address> [<address> ...]**: Comparative DeFi Summary
-  - Analyze multiple wallets simultaneously
-  - Read addresses from command line or text file
-  - Auto-extracts Solana addresses from text using regex
-  - Comparative metrics across wallets including:
-    - ROI percentages (24h, 7d, 30d)
-    - Win rates and median statistics
-    - Fee analysis and efficiency metrics
-    - Trade volume and activity levels
-  - Filtering by token age with `--days` parameter
-  - Filtering transactions by age with `--defi_days` parameter
-  - Color-coded performance indicators
-  - Exports comprehensive CSV report
-
-### 🔎 Token Holder Analysis
-
-- **-6 <token_address>**: Token Holder Analytics
-  - Fetch detailed holder statistics for any Solana token
-  - Categorized holder breakdown by wallet size
-  - Analysis of token distribution and concentration
-  - Whale monitoring and distribution metrics
-  - Saves holder data to CSV with timestamp
 
 ## 🛠️ Installation
 
