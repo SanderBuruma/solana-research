@@ -13,7 +13,7 @@ from rich.panel import Panel
 
 from utils.solscan import SolscanAPI, analyze_trades, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
 
-def generate_aggregate_filename(addresses, file_type, include_timestamp=True, batch_idx=None):
+def generate_aggregate_filename(addresses, file_type, include_timestamp=True, batch_idx=None, include_timestamp_str=True):
     """
     Generate a standardized filename for aggregate results based on wallet addresses.
     
@@ -22,6 +22,7 @@ def generate_aggregate_filename(addresses, file_type, include_timestamp=True, ba
         file_type (str): Type of the file (e.g., 'dex-trades', 'balance', 'option5')
         include_timestamp (bool): Whether to include timestamp in filename
         batch_idx (int, optional): Batch index number, if applicable
+        include_timestamp_str (bool, optional): Whether to include timestamp string in filename
         
     Returns:
         str: Path to the aggregate file
@@ -48,7 +49,10 @@ def generate_aggregate_filename(addresses, file_type, include_timestamp=True, ba
     # Create reports directory if it doesn't exist
     os.makedirs("reports", exist_ok=True)
     
-    return f"reports/aggregate-{prefix_str}-{file_type}{batch_str}{timestamp_str}.csv"
+    if include_timestamp_str:
+        return f"reports/aggregate-{prefix_str}-{file_type}{batch_str}{timestamp_str}.csv"
+    else:
+        return f"reports/aggregate-{prefix_str}-{file_type}{batch_str}.csv"
 
 def deduplicate_addresses(addresses, console):
     """
@@ -240,7 +244,7 @@ def process_aggregate_balances(api, console, addresses):
     os.makedirs('reports', exist_ok=True)
     
     # Generate filename using the standardized format
-    csv_file = generate_aggregate_filename(addresses, "balance")
+    csv_file = generate_aggregate_filename(addresses, "balance", include_timestamp_str=False)
     
     # Create CSV file with headers if it doesn't exist
     if not os.path.exists(csv_file):
