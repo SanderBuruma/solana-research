@@ -291,7 +291,10 @@ class SolscanAPI:
         
         for attempt in range(max_retries):
             try:
-                response = self.scraper.get(url, headers=self.headers)
+                if self.proxies:
+                    response = self.scraper.get(url, headers=self.headers, proxies=self.proxies)
+                else:
+                    response = self.scraper.get(url, headers=self.headers)
                 response.raise_for_status()
                 return response.json()
             except (cloudscraper.exceptions.CloudflareChallengeError) as e:
@@ -573,7 +576,17 @@ class SolscanAPI:
                     timestamp_params += f"&to_time={to_time}"
                 
                 endpoint = f'account/activity/dextrading?address={address}&page={page}&page_size={page_size}&activity_type[]=ACTIVITY_TOKEN_SWAP&activity_type[]=ACTIVITY_AGG_TOKEN_SWAP{timestamp_params}'
-                data = self._make_request(endpoint)
+                try:
+                    data = self._make_request(endpoint)
+                except Exception as e:
+                    print(f"Error: {e}")
+                    print(f"Endpoint: {endpoint}")
+                    print(f"Address: {address}")
+                    print(f"Page: {page}")
+                    print(f"Page Size: {page_size}")
+                    print(f"Timestamp Params: {timestamp_params}")
+                    # Skip this page
+                    break
                 
                 if not data or not data.get('success') or not data.get('data'):
                     break

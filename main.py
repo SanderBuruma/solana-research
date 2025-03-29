@@ -707,9 +707,6 @@ def option_4(api, console):
             except (ValueError, IndexError):
                 console.print("[red]Error: --defi_days parameter must be an integer (e.g., --defi_days=7)[/red]")
                 sys.exit(1)
-        elif not args[i].startswith('--'):
-            # This is a target wallet address
-            target_wallets.append(args[i])
         i += 1
     
     # If no addresses found, use the first argument
