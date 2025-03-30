@@ -756,6 +756,61 @@ def option_3(api, console):
     else:
         console.print(f"\n[yellow]Report saved to {csv_filename}[/yellow]")
 
+def read_copy_traders_csv():
+    """
+    Read existing copy_traders.csv into a dictionary.
+    Returns a dictionary with (wallet, target) as key and (count, timestamp) as value.
+    """
+    copy_traders_file = 'reports/copy_traders.csv'
+    copy_traders = {}
+    
+    # Create file with headers if it doesn't exist
+    if not os.path.exists(copy_traders_file):
+        with open(copy_traders_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Timestamp', 'Copyer', 'Copyee', 'Count'])
+        return copy_traders
+    
+    # Read existing entries
+    with open(copy_traders_file, 'r', newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            key = (row['Copyer'], row['Copyee'])
+            copy_traders[key] = (int(row['Count']), row['Timestamp'])
+    
+    return copy_traders
+
+def update_copy_traders_csv(copy_traders, new_entries, console):
+    """
+    Update copy_traders.csv with new entries.
+    
+    Args:
+        copy_traders (dict): Existing entries from read_copy_traders_csv()
+        new_entries (list): List of (copyer, copyee, count) tuples
+        console (Console): Rich console for output
+    """
+    copy_traders_file = 'reports/copy_traders.csv'
+    current_timestamp = datetime.now().strftime('%Y-%m-%d:%H-%M')
+    
+    # Update existing entries and add new ones
+    for copyer, copyee, count in new_entries:
+        key = (copyer, copyee)
+        if key in copy_traders:
+            # Update existing entry with new count and timestamp
+            copy_traders[key] = (count, current_timestamp)
+        else:
+            # Add new entry
+            copy_traders[key] = (count, current_timestamp)
+    
+    # Write all entries back to file
+    with open(copy_traders_file, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Timestamp', 'Copyer', 'Copyee', 'Count'])
+        for (copyer, copyee), (count, timestamp) in copy_traders.items():
+            writer.writerow([timestamp, copyer, copyee, count])
+    
+    console.print(f"[green]Updated copy_traders.csv with {len(new_entries)} new/updated entries[/green]")
+
 def option_4(api, console):
     """
     Detect wallets that bought the same tokens as the target wallet
@@ -791,6 +846,9 @@ def option_4(api, console):
     # If no addresses found, use the first argument
     if not target_wallets:
         target_wallets = [sys.argv[2]]
+    
+    # Read existing copy traders data
+    copy_traders = read_copy_traders_csv()
     
     # Process each wallet address
     for target_wallet in target_wallets:
@@ -905,6 +963,9 @@ def option_4(api, console):
             reverse=True
         )
         
+        # Track new entries for copy_traders.csv
+        new_entries = []
+        
         # Add rows to the table
         for wallet, data in sorted_wallets:
             before_count = len(data['before'])
@@ -919,6 +980,12 @@ def option_4(api, console):
                 str(before_count),
                 str(after_count)
             )
+            
+            # Add to new_entries if meets criteria
+            if before_count > 5 and before_count > after_count:
+                new_entries.append((target_wallet, wallet, before_count))
+            elif after_count > 5 and after_count > before_count:
+                new_entries.append((wallet, target_wallet, after_count))
         
         console.print(wallets_table)
         
@@ -942,6 +1009,10 @@ def option_4(api, console):
                 ])
         
         console.print(f"\n[yellow]Results for {target_wallet} saved to {csv_filename}[/yellow]")
+        
+        # Update copy_traders.csv with new entries
+        if new_entries:
+            update_copy_traders_csv(copy_traders, new_entries, console)
 
 def option_5(api, console):
     if len(sys.argv) < 3:
