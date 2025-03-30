@@ -13,6 +13,79 @@ from rich.panel import Panel
 
 from utils.solscan import SolscanAPI, analyze_trades, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
 
+def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: dict, token_data: list, console: Console) -> None:
+    """
+    Update or create stats.csv with trading statistics for a wallet.
+    
+    Args:
+        timestamp (str): Current timestamp in yyyy-mm-dd:hh-mm format
+        address (str): Wallet address
+        roi_data (dict): ROI data from analyze_trades
+        tx_summary (dict): Transaction summary from analyze_trades
+        token_data (list): Token data from analyze_trades
+        console (Console): Rich console for output
+    """
+    stats_file = 'reports/stats.csv'
+    fieldnames = [
+        'Timestamp', 'Address', '24H ROI %', '7D ROI %', '30D ROI %', '60D ROI %', 
+        '60D ROI', 'Win Rate', 'Unique Tokens Traded', 'Median Investment', 
+        'Med ROI %', 'Median Hold Time', 'Median Market Entry', 'Median Market Cap % at Entry'
+    ]
+    
+    # Create reports directory if it doesn't exist
+    os.makedirs('reports', exist_ok=True)
+    
+    # Count unique tokens
+    unique_tokens = len(set(token['address'] for token in token_data))
+    
+    # Prepare row data
+    row_data = {
+        'Timestamp': timestamp,
+        'Address': address,
+        '24H ROI %': f"{roi_data['24h']['roi_percent']:.2f}" if roi_data['24h']['roi_percent'] is not None else "N/A",
+        '7D ROI %': f"{roi_data['7d']['roi_percent']:.2f}" if roi_data['7d']['roi_percent'] is not None else "N/A",
+        '30D ROI %': f"{roi_data['30d']['roi_percent']:.2f}" if roi_data['30d']['roi_percent'] is not None else "N/A",
+        '60D ROI %': f"{roi_data['60d']['roi_percent']:.2f}" if roi_data['60d']['roi_percent'] is not None else "N/A",
+        '60D ROI': f"{roi_data['60d']['profit']:.3f}",
+        'Win Rate': f"{tx_summary['win_rate']:.1f}",
+        'Unique Tokens Traded': str(unique_tokens),
+        'Median Investment': f"{tx_summary['median_investment']:.3f}",
+        'Med ROI %': f"{tx_summary['median_roi_percent']:.1f}",
+        'Median Hold Time': format_seconds(tx_summary['median_hold_time']),
+        'Median Market Entry': format_mc(tx_summary['median_market_entry']),
+        'Median Market Cap % at Entry': f"{tx_summary['median_mc_percentage']:.4f}"
+    }
+    
+    try:
+        # Read existing data if file exists
+        existing_data = []
+        if os.path.exists(stats_file):
+            with open(stats_file, 'r', newline='', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                existing_data = list(reader)
+        
+        # Update or add new row
+        updated = False
+        for row in existing_data:
+            if row['Address'] == address:
+                row.update(row_data)
+                updated = True
+                break
+        
+        if not updated:
+            existing_data.append(row_data)
+        
+        # Write all data back to file
+        with open(stats_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(existing_data)
+        
+        console.print(f"[green]Updated stats.csv with data for {address}[/green]")
+        
+    except Exception as e:
+        console.print(f"[red]Error updating stats.csv: {str(e)}[/red]")
+
 def get_addresses_from_args(args) -> list[str]:
     """
     Get addresses from command line arguments.
@@ -476,6 +549,12 @@ def option_3(api, console):
         filter_token_stats({}, None)
         return
 
+    # Update stats.csv if no time filters are applied
+    if not defi_days:
+        timestamp = datetime.now().strftime('%Y-%m-%d:%H-%M')
+        for address in addresses:
+            update_stats_csv(timestamp, address, roi_data, tx_summary, token_data, console)
+
     # Display token table
     table = Table(title="DEX Trading Summary")
     table.add_column("Token", style="dim")
@@ -910,7 +989,7 @@ def option_5(api, console):
         sys.exit(1)
 
     # Create the base timestamp for all batch files
-    timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
+    timestamp = datetime.now().strftime('%Y-%m-%d:%H-%M')
     
     # Create the reports directory if it doesn't exist
     os.makedirs('reports', exist_ok=True)
@@ -962,6 +1041,10 @@ def option_5(api, console):
 
             # Use analyze_trades to get structured data
             token_data, roi_data, tx_summary = analyze_trades(trades, api.console)
+
+            # Update stats.csv if no time filters are applied
+            if not defi_days_filter and not days_filter:
+                update_stats_csv(timestamp, addr, roi_data, tx_summary, token_data, console)
 
             # Calculate total fees from token data
             total_fees = sum(token['total_fees'] for token in token_data)
