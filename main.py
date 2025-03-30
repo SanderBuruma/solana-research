@@ -549,11 +549,10 @@ def option_3(api, console):
         filter_token_stats({}, None)
         return
 
-    # Update stats.csv if no time filters are applied
-    if not defi_days:
+    # Update stats.csv if no time filters are applied AND we're not in aggregate mode
+    if not defi_days and len(addresses) == 1:
         timestamp = datetime.now().strftime('%Y-%m-%d:%H-%M')
-        for address in addresses:
-            update_stats_csv(timestamp, address, roi_data, tx_summary, token_data, console)
+        update_stats_csv(timestamp, addresses[0], roi_data, tx_summary, token_data, console)
 
     # Display token table
     table = Table(title="DEX Trading Summary")
@@ -708,7 +707,6 @@ def option_3(api, console):
     # Create directory for this wallet address
     wallet_dir = f"./reports/{address}"
     os.makedirs(wallet_dir, exist_ok=True)
-    
     
     timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M')
     if aggregate_mode and len(addresses) > 1:
