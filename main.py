@@ -867,9 +867,11 @@ def option_4(api, console):
         wallets_table.add_column("Wallet Address", style="cyan")
         wallets_table.add_column("Before (≤30s)", justify="right", style="yellow")
         wallets_table.add_column("After (≤30s)", justify="right", style="green")
+        wallets_table.add_column("Med Buy-in", justify="right", style="yellow")
+        wallets_table.add_column("Avg Buy-in", justify="right", style="green")
         
         # Dictionary to track wallet stats
-        wallets = {}  # Structure: {wallet_address: {'before': set(), 'after': set()}}
+        wallets = {}  # Structure: {wallet_address: {'before': {'tokens': set(), 'buy_ins': []}, 'after': {'tokens': set(), 'buy_ins': []}}}
         
         trades = api.get_dex_trading_history(target_wallet, quiet=True, defi_days=defi_days)
         
@@ -945,13 +947,26 @@ def option_4(api, console):
                     
                     # Initialize wallet data if not seen before
                     if trade.from_address not in wallets:
-                        wallets[trade.from_address] = {'before': set(), 'after': set()}
+                        wallets[trade.from_address] = {
+                            'before': {'tokens': set(), 'buy_ins': []},
+                            'after': {'tokens': set(), 'buy_ins': []}
+                        }
                     
-                    # Add token to the appropriate set based on timing
+                    # Extract buy-in amount (SOL amount)
+                    try:
+                        amount1 = float(trade.amount1) / (10 ** trade.token1_decimals)
+                        amount2 = float(trade.amount2) / (10 ** trade.token2_decimals)
+                        buy_in = amount1 if is_sol_token(trade.token1) else amount2
+                    except (ValueError, TypeError):
+                        buy_in = 0
+                    
+                    # Add token and buy-in amount to the appropriate set based on timing
                     if -30 <= time_diff < 0:  # Bought before target (within 30 seconds)
-                        wallets[trade.from_address]['before'].add(token)
+                        wallets[trade.from_address]['before']['tokens'].add(token)
+                        wallets[trade.from_address]['before']['buy_ins'].append(buy_in)
                     elif 0 < time_diff <= 30:  # Bought after target (within 30 seconds)
-                        wallets[trade.from_address]['after'].add(token)
+                        wallets[trade.from_address]['after']['tokens'].add(token)
+                        wallets[trade.from_address]['after']['buy_ins'].append(buy_in)
         
         # Filter out wallets with no matches
         wallets = {k: v for k, v in wallets.items() if v['before'] or v['after']}
@@ -964,9 +979,9 @@ def option_4(api, console):
         sorted_wallets = sorted(
             wallets.items(), 
             key=lambda x: (
-                1 if len(x[1]['before']) > len(x[1]['after']) else 0, # Primary sort: whether before > after
-                len(x[1]['after']),   # Secondary sort: number of "after" trades
-                len(x[1]['before'])  # Tertiary sort: number of "before" trades
+                1 if len(x[1]['before']['tokens']) > len(x[1]['after']['tokens']) else 0, # Primary sort: whether before > after
+                len(x[1]['after']['tokens']),   # Secondary sort: number of "after" trades
+                len(x[1]['before']['tokens'])  # Tertiary sort: number of "before" trades
             ),
             reverse=True
         )
@@ -976,17 +991,31 @@ def option_4(api, console):
         
         # Add rows to the table
         for wallet, data in sorted_wallets:
-            before_count = len(data['before'])
-            after_count = len(data['after'])
+            before_count = len(data['before']['tokens'])
+            after_count = len(data['after']['tokens'])
 
             # Only show wallets with at least 5 trades before and after
             if before_count < 5 and after_count < 5:
                 continue
             
+            # Calculate median and average buy-in amounts
+            before_buy_ins = sorted(data['before']['buy_ins'])
+            after_buy_ins = sorted(data['after']['buy_ins'])
+            
+            before_median = before_buy_ins[len(before_buy_ins)//2] if before_buy_ins else 0
+            after_median = after_buy_ins[len(after_buy_ins)//2] if after_buy_ins else 0
+            median_buy_in = (before_median + after_median) / 2 if before_buy_ins or after_buy_ins else 0
+            
+            before_avg = sum(before_buy_ins) / len(before_buy_ins) if before_buy_ins else 0
+            after_avg = sum(after_buy_ins) / len(after_buy_ins) if after_buy_ins else 0
+            avg_buy_in = (before_avg + after_avg) / 2 if before_buy_ins or after_buy_ins else 0
+            
             wallets_table.add_row(
                 wallet,
                 str(before_count),
-                str(after_count)
+                str(after_count),
+                f"{median_buy_in:.3f} ◎",
+                f"{avg_buy_in:.3f} ◎"
             )
             
             # Add to new_entries if meets criteria
@@ -1007,13 +1036,30 @@ def option_4(api, console):
         
         with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After'])
+            writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After', 'Median Buy-in', 'Average Buy-in'])
             
             for wallet, data in sorted_wallets:
+                before_count = len(data['before']['tokens'])
+                after_count = len(data['after']['tokens'])
+                
+                # Calculate median and average buy-in amounts
+                before_buy_ins = sorted(data['before']['buy_ins'])
+                after_buy_ins = sorted(data['after']['buy_ins'])
+                
+                before_median = before_buy_ins[len(before_buy_ins)//2] if before_buy_ins else 0
+                after_median = after_buy_ins[len(after_buy_ins)//2] if after_buy_ins else 0
+                median_buy_in = (before_median + after_median) / 2 if before_buy_ins or after_buy_ins else 0
+                
+                before_avg = sum(before_buy_ins) / len(before_buy_ins) if before_buy_ins else 0
+                after_avg = sum(after_buy_ins) / len(after_buy_ins) if after_buy_ins else 0
+                avg_buy_in = (before_avg + after_avg) / 2 if before_buy_ins or after_buy_ins else 0
+                
                 writer.writerow([
                     wallet,
-                    len(data['before']),
-                    len(data['after'])
+                    before_count,
+                    after_count,
+                    format_number_for_csv(median_buy_in),
+                    format_number_for_csv(avg_buy_in)
                 ])
         
         console.print(f"\n[yellow]Results for {target_wallet} saved to {csv_filename}[/yellow]")
