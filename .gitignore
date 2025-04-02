@@ -46,3 +46,5 @@ reports/
 dex_activity/
 
 request.ps1
+
+*.ignore.*
