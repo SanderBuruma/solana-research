@@ -1935,6 +1935,13 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
     # Calculate median ROI % from individual token ROI percentages
     median_roi_percent = sorted(roi_percentages)[len(roi_percentages)//2] if roi_percentages else 0
     
+    # Calculate ROI standard deviation
+    roi_std_dev = 0
+    if roi_percentages:
+        mean_roi = sum(roi_percentages) / len(roi_percentages)
+        squared_diff_sum = sum((x - mean_roi) ** 2 for x in roi_percentages)
+        roi_std_dev = (squared_diff_sum / len(roi_percentages)) ** 0.5
+    
     # Prepare transaction summary
     total_defi_txs = len(trades)
     non_sol_txs = sum(1 for trade in trades if 
@@ -1958,6 +1965,7 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         'win_rate_ratio': f"{len(profits)}/{total_tokens}",
         'median_investment': median_investment,
         'median_roi_percent': median_roi_percent,  # Add new field for median ROI %
+        'roi_std_dev': roi_std_dev,  # Add standard deviation of ROI %
         'median_hold_time': median_hold_time.total_seconds(),
         'median_market_entry': median_market_entry,
         'median_mc_percentage': median_mc_percentage

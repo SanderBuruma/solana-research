@@ -7,6 +7,7 @@ from datetime import datetime
 from unittest.mock import patch, MagicMock
 import sys
 import json
+from dotenv import load_dotenv
 
 from rich.console import Console
 
@@ -596,6 +597,87 @@ class TestSolscanGetDexTradingHistory(unittest.TestCase):
         self.assertAlmostEqual(token1_data['hold_time'], expected_hold_time, delta=10,
                               msg=f"Token1 hold time should be ~{expected_hold_time} seconds (1 day)")
 
+    def test_analyze_trades_roi_std_dev(self):
+        """Test that the analyze_trades function correctly calculates ROI standard deviation"""
+        # Create mock trades with known ROI percentages
+        now = int(time.time())
+        one_day = 86400
+        
+        # Load fee values from environment (same as in analyze_trades)
+        load_dotenv()
+        BUY_FIXED_FEE = float(os.getenv('BUY_FIXED_FEE', '0.002'))
+        SELL_FIXED_FEE = float(os.getenv('SELL_FIXED_FEE', '0.002'))
+        BUY_PERCENT_FEE = float(os.getenv('BUY_PERCENT_FEE', '0.022912'))
+        SELL_PERCENT_FEE = float(os.getenv('SELL_PERCENT_FEE', '0.063'))
+        
+        # Create trades with known ROI percentages: 10%, 20%, 30%, 40%, 50%
+        trades = []
+        for i, roi in enumerate([10, 20, 30, 40, 50]):
+            # Buy trade
+            buy_trade = {
+                'trans_id': f'trade{i}_buy',
+                'block_time': now - (i+1)*one_day,
+                'slot': 100000 + i,
+                'amount_info': {
+                    'token1': 'So11111111111111111111111111111111111111112',  # SOL
+                    'token2': f'token{i}',
+                    'token1_decimals': 9,
+                    'token2_decimals': 6,
+                    'amount1': 1000000000,  # 1 SOL
+                    'amount2': 1000000  # 1 token
+                }
+            }
+            
+            # Calculate fees for buy trade
+            buy_fixed_fee = BUY_FIXED_FEE
+            buy_percent_fee = 1 * BUY_PERCENT_FEE  # 1 SOL
+            total_buy_fee = buy_fixed_fee + buy_percent_fee
+            
+            # Calculate fees for sell trade
+            sell_fixed_fee = SELL_FIXED_FEE
+            sell_percent_fee = (1 + roi/100) * SELL_PERCENT_FEE  # 1 SOL + ROI%
+            total_sell_fee = sell_fixed_fee + sell_percent_fee
+            
+            # Total fees for this trade
+            total_fees = total_buy_fee + total_sell_fee
+            
+            # Adjust the sell amount to account for fees to achieve the desired ROI
+            # ROI = (received - invested - fees) / invested
+            # Therefore: received = invested * (1 + ROI/100) + fees
+            adjusted_amount = 1000000000 * (1 + roi/100) + (total_fees * 1000000000)  # Convert to lamports
+            
+            # Sell trade with adjusted amount to account for fees
+            sell_trade = {
+                'trans_id': f'trade{i}_sell',
+                'block_time': now - i*one_day,
+                'slot': 100001 + i,
+                'amount_info': {
+                    'token1': f'token{i}',
+                    'token2': 'So11111111111111111111111111111111111111112',  # SOL
+                    'token1_decimals': 6,
+                    'token2_decimals': 9,
+                    'amount1': 1000000,  # 1 token
+                    'amount2': int(adjusted_amount)  # Adjusted amount to account for fees
+                }
+            }
+            
+            trades.extend([SolscanDefiActivity(buy_trade), SolscanDefiActivity(sell_trade)])
+        
+        # Create a console for the analyze_trades function
+        console = Console(record=True)
+        
+        # Call analyze_trades function
+        token_data, roi_data, tx_summary = analyze_trades(trades, console)
+        
+        # Calculate expected standard deviation
+        # Mean = (10 + 20 + 30 + 40 + 50) / 5 = 30
+        # Variance = ((10-30)^2 + (20-30)^2 + (30-30)^2 + (40-30)^2 + (50-30)^2) / 5
+        # = (400 + 100 + 0 + 100 + 400) / 5 = 200
+        # Standard deviation = sqrt(200) ≈ 14.1421
+        expected_std_dev = 14.1421
+        
+        # Test that the calculated standard deviation is close to the expected value
+        self.assertAlmostEqual(tx_summary['roi_std_dev'], expected_std_dev, places=2)
 
 if __name__ == '__main__':
     unittest.main() 

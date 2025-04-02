@@ -36,7 +36,7 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
     fieldnames = [
         'Timestamp', 'Address', '24H ROI %', '7D ROI %', '30D ROI %', '60D ROI %', 
         '60D ROI', 'Win Rate', 'Unique Tokens Traded', 'Median Investment', 
-        'Med ROI %', 'Median Hold Time', 'Median Market Entry', 'Median Market Cap % at Entry'
+        'Med ROI %', 'ROI % Std Dev', 'Median Hold Time', 'Median Market Entry', 'Median Market Cap % at Entry'
     ]
     
     # Create reports directory if it doesn't exist
@@ -58,6 +58,7 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
         'Unique Tokens Traded': str(unique_tokens),
         'Median Investment': format_number_for_csv(tx_summary['median_investment']),
         'Med ROI %': format_number_for_csv(tx_summary['median_roi_percent']),
+        'ROI % Std Dev': format_number_for_csv(tx_summary['roi_std_dev']),
         'Median Hold Time': format_seconds(tx_summary['median_hold_time']),
         'Median Market Entry': format_mc(tx_summary['median_market_entry']),
         'Median Market Cap % at Entry': format_number_for_csv(tx_summary['median_mc_percentage'])
@@ -701,6 +702,7 @@ def option_3(api, console):
     transactions_table.add_row("Win Rate", f"{tx_summary['win_rate']:.1f}%", f"({tx_summary['win_rate_ratio']} tokens)")
     transactions_table.add_row("Median Investment per Token", f"{tx_summary['median_investment']:.3f} ◎", "")
     transactions_table.add_row("Median ROI %", f"{tx_summary['median_roi_percent']:.1f}%", "")
+    transactions_table.add_row("ROI % Standard Deviation", f"{tx_summary['roi_std_dev']:.1f}%", "")
     transactions_table.add_row("Median Hold Time", f"{format_seconds(tx_summary['median_hold_time'])}", "")
     transactions_table.add_row("Median Market Entry", f"{format_mc(tx_summary['median_market_entry'])}", "")
     transactions_table.add_row("Median % of Market Cap at Entry", f"{tx_summary['median_mc_percentage']:.4f}%", "")
@@ -1102,6 +1104,7 @@ def option_5(api, console):
         summary_table.add_column("Win Rate", justify="right", style="green")
         summary_table.add_column("Med Investment", justify="right", style="green")
         summary_table.add_column("Med ROI %", justify="right", style="magenta")
+        summary_table.add_column("ROI % Std Dev", justify="right", style="magenta")
         summary_table.add_column("Med Hold Time", justify="right", style="blue")
         summary_table.add_column("Med Market Entry", justify="right", style="yellow")
         summary_table.add_column("Med MC %", justify="right", style="cyan")
@@ -1154,10 +1157,12 @@ def option_5(api, console):
                 "Profitable/Total": tx_summary['win_rate_ratio'],
                 "Median Investment": format_number_for_csv(tx_summary['median_investment']),
                 "Median ROI %": format_number_for_csv(tx_summary['median_roi_percent']),
+                "ROI % Std Dev": format_number_for_csv(tx_summary['roi_std_dev']),
                 "Median Hold Time": format_seconds(tx_summary['median_hold_time']),
                 "win_rate": tx_summary['win_rate'],
                 "med_investment": tx_summary['median_investment'],
                 "med_roi": tx_summary['median_roi_percent'],
+                "roi_std_dev": tx_summary['roi_std_dev'],
                 "med_hold_time": tx_summary['median_hold_time'],
                 "med_market_entry": tx_summary['median_market_entry'],
                 "med_mc_percentage": tx_summary['median_mc_percentage'],
@@ -1192,6 +1197,7 @@ def option_5(api, console):
                 f"[{win_rate_color}]{tx_summary['win_rate']:.1f}% ({tx_summary['win_rate_ratio']})[/{win_rate_color}]",
                 f"{tx_summary['median_investment']:.3f} ◎",
                 f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
+                f"{tx_summary['roi_std_dev']:.1f}%",
                 format_seconds(tx_summary['median_hold_time']),
                 format_mc(tx_summary['median_market_entry']),
                 f"{tx_summary['median_mc_percentage']:.4f}%",
