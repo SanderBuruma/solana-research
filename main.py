@@ -11,7 +11,14 @@ import json
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from utils.solscan import SolscanAPI, analyze_trades, display_transactions_table, filter_token_stats, format_token_address, format_token_amount
+from utils.solscan import SolscanAPI, analyze_trades, display_transactions_table, filter_token_stats, format_token_address, format_token_amount, format_number_for_csv
+
+def format_number_for_csv(number: float) -> str:
+    """Format a number with comma as decimal separator for CSV files."""
+    if isinstance(number, (int, float)):
+        # Always use 2 decimal places for non-integer numbers
+        return f"{number:.2f}".replace('.', ',')
+    return str(number)
 
 def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: dict, token_data: list, console: Console) -> None:
     """
@@ -42,18 +49,18 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
     row_data = {
         'Timestamp': timestamp,
         'Address': address,
-        '24H ROI %': f"{roi_data['24h']['roi_percent']:.2f}" if roi_data['24h']['roi_percent'] is not None else "N/A",
-        '7D ROI %': f"{roi_data['7d']['roi_percent']:.2f}" if roi_data['7d']['roi_percent'] is not None else "N/A",
-        '30D ROI %': f"{roi_data['30d']['roi_percent']:.2f}" if roi_data['30d']['roi_percent'] is not None else "N/A",
-        '60D ROI %': f"{roi_data['60d']['roi_percent']:.2f}" if roi_data['60d']['roi_percent'] is not None else "N/A",
-        '60D ROI': f"{roi_data['60d']['profit']:.3f}",
-        'Win Rate': f"{tx_summary['win_rate']:.1f}",
+        '24H ROI %': format_number_for_csv(roi_data['24h']['roi_percent']) if roi_data['24h']['roi_percent'] is not None else "N/A",
+        '7D ROI %': format_number_for_csv(roi_data['7d']['roi_percent']) if roi_data['7d']['roi_percent'] is not None else "N/A",
+        '30D ROI %': format_number_for_csv(roi_data['30d']['roi_percent']) if roi_data['30d']['roi_percent'] is not None else "N/A",
+        '60D ROI %': format_number_for_csv(roi_data['60d']['roi_percent']) if roi_data['60d']['roi_percent'] is not None else "N/A",
+        '60D ROI': format_number_for_csv(roi_data['60d']['profit']),
+        'Win Rate': format_number_for_csv(tx_summary['win_rate']),
         'Unique Tokens Traded': str(unique_tokens),
-        'Median Investment': f"{tx_summary['median_investment']:.3f}",
-        'Med ROI %': f"{tx_summary['median_roi_percent']:.1f}",
+        'Median Investment': format_number_for_csv(tx_summary['median_investment']),
+        'Med ROI %': format_number_for_csv(tx_summary['median_roi_percent']),
         'Median Hold Time': format_seconds(tx_summary['median_hold_time']),
         'Median Market Entry': format_mc(tx_summary['median_market_entry']),
-        'Median Market Cap % at Entry': f"{tx_summary['median_mc_percentage']:.4f}"
+        'Median Market Cap % at Entry': format_number_for_csv(tx_summary['median_mc_percentage'])
     }
     
     try:
@@ -61,7 +68,7 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
         existing_data = []
         if os.path.exists(stats_file):
             with open(stats_file, 'r', newline='', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
+                reader = csv.DictReader(f, delimiter=';')  # Using semicolon for LibreOffice compatibility
                 existing_data = list(reader)
         
         # Update or add new row
@@ -77,7 +84,7 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
         
         # Write all data back to file
         with open(stats_file, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=';')  # Using semicolon for LibreOffice compatibility
             writer.writeheader()
             writer.writerows(existing_data)
         
@@ -85,6 +92,7 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
         
     except Exception as e:
         console.print(f"[red]Error updating stats.csv: {str(e)}[/red]")
+        raise e
 
 def get_addresses_from_args(args) -> list[str]:
     """
@@ -159,13 +167,13 @@ def is_sol_token(token: str) -> bool:
 def format_mc(mc):
     """Format a market cap value with appropriate suffix and return the formatted string."""
     if mc >= 1_000_000_000:
-        return f"{mc/1_000_000_000:.1f}B"
+        return f"{mc/1_000_000_000:.1f}".replace('.', ',') + "B"
     elif mc >= 1_000_000:
-        return f"{mc/1_000_000:.1f}M"
+        return f"{mc/1_000_000:.1f}".replace('.', ',') + "M"
     elif mc >= 1_000:
-        return f"{mc/1_000:.1f}K"
+        return f"{mc/1_000:.1f}".replace('.', ',') + "K"
     else:
-        return f"{mc:.1f}"
+        return f"{mc:.1f}".replace('.', ',')
 
 def format_seconds(seconds):
     """Format seconds into a human-readable string (days, hours, minutes, seconds)."""
@@ -589,16 +597,16 @@ def option_3(api, console):
         mc = token['first_mc']
         if mc >= 1_000_000_000:
             mc_color = "green"
-            mc_value = f"{mc/1_000_000_000:.1f}B"
+            mc_value = f"{mc/1_000_000_000:.1f}".replace('.', ',') + "B"
         elif mc >= 1_000_000:
             mc_color = "yellow"
-            mc_value = f"{mc/1_000_000:.1f}M"
+            mc_value = f"{mc/1_000_000:.1f}".replace('.', ',') + "M"
         elif mc >= 1_000:
             mc_color = "red"
-            mc_value = f"{mc/1_000:.1f}K"
+            mc_value = f"{mc/1_000:.1f}".replace('.', ',') + "K"
         else:
             mc_color = "red"
-            mc_value = f"{mc/1_000:.1f}K"
+            mc_value = f"{mc/1_000:.1f}".replace('.', ',') + "K"
 
         profit_color = "green" if token['sol_profit'] >= 0 else "red"
         total_profit_color = "green" if token['total_profit'] >= 0 else "red"
@@ -716,37 +724,37 @@ def option_3(api, console):
 
     # Save to CSV
     with open(csv_filename, 'w', encoding='utf-8') as f:
-        f.write("Token,First Trade,Hold Time,Last Trade,First MC,SOL Invested,SOL Received,SOL Profit (after fees),Buy Fees,Sell Fees,Total Fees,Remaining Value,Total Profit (after fees),Token Price (USDT),Trades\n")
+        f.write("Token;First Trade;Hold Time;Last Trade;First MC;SOL Invested;SOL Received;SOL Profit (after fees);Buy Fees;Sell Fees;Total Fees;Remaining Value;Total Profit (after fees);Token Price (USDT);Trades\n")
         for token in token_data:
             hold_time_td = timedelta(seconds=token['hold_time'])
             hold_time = f"{hold_time_td.days}d {hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
-            f.write(f"{token['address']}," + 
-                    f"{datetime.fromtimestamp(token['first_trade']).strftime('%Y-%m-%d %H:%M')}," +
-                    f"{hold_time}," +
-                    f"{datetime.fromtimestamp(token['last_trade']).strftime('%Y-%m-%d %H:%M')}," +
-                    f"{token['first_mc']:.2f}," +
-                    f"{token['sol_invested']:.3f}," +
-                    f"{token['sol_received']:.3f}," +
-                    f"{token['sol_profit']:.3f}," +  # Already includes fees
-                    f"{token['buy_fees']:.3f}," +
-                    f"{token['sell_fees']:.3f}," +
-                    f"{token['total_fees']:.3f}," +
-                    f"{token['remaining_value']:.3f}," +
-                    f"{token['total_profit']:.3f}," +  # Already includes fees
-                    f"{token['token_price']:.6f}," +
+            f.write(f"{token['address']};" + 
+                    f"{datetime.fromtimestamp(token['first_trade']).strftime('%Y-%m-%d %H:%M')};" +
+                    f"{hold_time};" +
+                    f"{datetime.fromtimestamp(token['last_trade']).strftime('%Y-%m-%d %H:%M')};" +
+                    f"{token['first_mc']:.2f};" +
+                    f"{token['sol_invested']:.3f};" +
+                    f"{token['sol_received']:.3f};" +
+                    f"{token['sol_profit']:.3f};" +  # Already includes fees
+                    f"{token['buy_fees']:.3f};" +
+                    f"{token['sell_fees']:.3f};" +
+                    f"{token['total_fees']:.3f};" +
+                    f"{token['remaining_value']:.3f};" +
+                    f"{token['total_profit']:.3f};" +  # Already includes fees
+                    f"{token['token_price']:.6f};" +
                     f"{token['trades']}\n")
 
         # Add totals to CSV
         total_overall_profit = total_profit + total_remaining  # Already includes fees
-        f.write(f"TOTAL,,,," +
-                f",{total_invested:.3f}," +
-                f"{total_received:.3f}," +
-                f"{total_profit:.3f}," +  # Already includes fees
-                f"{total_buy_fees:.3f}," +
-                f"{total_sell_fees:.3f}," +
-                f"{total_fees:.3f}," +
-                f"{total_remaining:.3f}," +
-                f"{total_overall_profit:.3f},," +  # Already includes fees
+        f.write(f"TOTAL;;;;" +
+                f";{total_invested:.3f};" +
+                f"{total_received:.3f};" +
+                f"{total_profit:.3f};" +  # Already includes fees
+                f"{total_buy_fees:.3f};" +
+                f"{total_sell_fees:.3f};" +
+                f"{total_fees:.3f};" +
+                f"{total_remaining:.3f};" +
+                f"{total_overall_profit:.3f};;" +  # Already includes fees
                 f"{total_trades}\n")
 
     if aggregate_mode and len(addresses) > 1:
@@ -1134,18 +1142,18 @@ def option_5(api, console):
             # Create result record
             result = {
                 "Address": addr,
-                "24H ROI %": f"{roi_data['24h']['roi_percent']:.2f}" if roi_data['24h']['roi_percent'] is not None else "N/A",
-                "7D ROI %": f"{roi_data['7d']['roi_percent']:.2f}" if roi_data['7d']['roi_percent'] is not None else "N/A",
-                "30D ROI %": f"{roi_data['30d']['roi_percent']:.2f}" if roi_data['30d']['roi_percent'] is not None else "N/A",
-                "60D ROI %": f"{roi_data['60d']['roi_percent']:.2f}" if roi_data['60d']['roi_percent'] is not None else "N/A",
-                "60D ROI": f"{roi_data['60d']['profit']:.3f}",  # Already includes fees
-                "Total Fees": f"{total_fees:.3f}",
-                "Buy Fees": f"{total_buy_fees:.3f}",
-                "Sell Fees": f"{total_sell_fees:.3f}",
-                "Win Rate": f"{tx_summary['win_rate']:.1f}",
+                "24H ROI %": format_number_for_csv(roi_data['24h']['roi_percent']) if roi_data['24h']['roi_percent'] is not None else "N/A",
+                "7D ROI %": format_number_for_csv(roi_data['7d']['roi_percent']) if roi_data['7d']['roi_percent'] is not None else "N/A",
+                "30D ROI %": format_number_for_csv(roi_data['30d']['roi_percent']) if roi_data['30d']['roi_percent'] is not None else "N/A",
+                "60D ROI %": format_number_for_csv(roi_data['60d']['roi_percent']) if roi_data['60d']['roi_percent'] is not None else "N/A",
+                "60D ROI": format_number_for_csv(roi_data['60d']['profit']),  # Already includes fees
+                "Total Fees": format_number_for_csv(total_fees),
+                "Buy Fees": format_number_for_csv(total_buy_fees),
+                "Sell Fees": format_number_for_csv(total_sell_fees),
+                "Win Rate": format_number_for_csv(tx_summary['win_rate']),
                 "Profitable/Total": tx_summary['win_rate_ratio'],
-                "Median Investment": f"{tx_summary['median_investment']:.3f}",
-                "Median ROI %": f"{'+' if tx_summary['median_roi_percent'] >= 0 else ''}{tx_summary['median_roi_percent']:.1f}%",
+                "Median Investment": format_number_for_csv(tx_summary['median_investment']),
+                "Median ROI %": format_number_for_csv(tx_summary['median_roi_percent']),
                 "Median Hold Time": format_seconds(tx_summary['median_hold_time']),
                 "win_rate": tx_summary['win_rate'],
                 "med_investment": tx_summary['median_investment'],
@@ -1197,7 +1205,7 @@ def option_5(api, console):
             batch_csv_filename = generate_aggregate_filename(batch_addresses, "option5", batch_idx=batch_idx)
             
             with open(batch_csv_filename, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=batch_results[0].keys())
+                writer = csv.DictWriter(f, fieldnames=batch_results[0].keys(), delimiter=';')  # Using semicolon for LibreOffice compatibility
                 writer.writeheader()
                 writer.writerows(batch_results)
             
@@ -1206,7 +1214,7 @@ def option_5(api, console):
     # Save master CSV with all results
     if all_results:
         with open(master_csv_filename, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=all_results[0].keys())
+            writer = csv.DictWriter(f, fieldnames=all_results[0].keys(), delimiter=';')  # Using semicolon for LibreOffice compatibility
             writer.writeheader()
             writer.writerows(all_results)
         
@@ -1566,7 +1574,7 @@ def option_8(api, console):
     csv_filename = f'reports/activity_heatmap_{target_wallet}_{timestamp}.csv'
     
     with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, delimiter=';')  # Using semicolon for LibreOffice compatibility
         # Write header with hours
         header = ['Day'] + [f"{hour:02d}:00" for hour in range(24)]
         writer.writerow(header)
@@ -1597,7 +1605,7 @@ def option_8(api, console):
     csv_filename = f'{wallet_dir}/activity_heatmap_{timestamp}.csv'
     
     with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, delimiter=';')  # Using semicolon for LibreOffice compatibility
         # Write header with hours
         header = ['Day'] + [f"{hour:02d}:00" for hour in range(24)]
         writer.writerow(header)

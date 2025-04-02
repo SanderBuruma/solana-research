@@ -179,7 +179,7 @@ class SolscanAPI:
             }
         else:
             self.proxies = None
-
+        
     def _parse_request_ps1(self) -> Optional[Dict[str, str]]:
         """
         Parse request.ps1 file to extract headers and cookies.
@@ -901,6 +901,13 @@ def get_hold_time_color(first: datetime, last: datetime) -> str:
         return "yellow"
     return "green"
 
+def format_number_for_csv(number: float) -> str:
+    """Format a number with comma as decimal separator for CSV files."""
+    if isinstance(number, (int, float)):
+        # Always use 2 decimal places for non-integer numbers
+        return f"{number:.2f}".replace('.', ',')
+    return str(number)
+
 def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Console, wallet_address: str, filter_str: Optional[str] = None):
     """
     Display DEX trading summary grouped by token and save to CSV
@@ -1126,7 +1133,7 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
     os.makedirs('reports', exist_ok=True)
     csv_file = f'reports/{wallet_address}.csv'
     with open(csv_file, 'w', encoding='utf-8') as f:
-        f.write("Token,First Trade,Hold Time,Last Trade,First MC,SOL Invested,SOL Received,SOL Profit,Remaining Value,Total Profit,Token Price (USDT),Trades\n")
+        f.write("Token;First Trade;Hold Time;Last Trade;First MC;SOL Invested;SOL Received;SOL Profit (after fees);Buy Fees;Sell Fees;Total Fees;Remaining Value;Total Profit (after fees);Token Price (USDT);Trades\n")
         
         for token, stats in sorted_tokens:
             remaining_tokens = stats['tokens_bought'] - stats['tokens_sold']
@@ -1155,65 +1162,6 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
             profit_color = "green" if sol_profit >= 0 else "red"
             total_profit_color = "green" if total_token_profit >= 0 else "red"
             
-            # Format token price display
-            token_price_display = f"${token_price:.6f}" if token_price is not None and token_price > 0 else "N/A"
-            
-            # Format hold time with color
-            first_trade = stats.get('first_trade')
-            last_trade = stats.get('last_trade')
-            hold_time = format_time_difference(first_trade, last_trade) if first_trade and last_trade else 'N/A'
-            if hold_time != 'N/A':
-                hold_time_color = get_hold_time_color(first_trade, last_trade)
-                hold_time = f"[{hold_time_color}]{hold_time}[/{hold_time_color}]"
-                if remaining_tokens > 0:
-                    hold_time += " [dim]*[dim]"
-            
-            # Calculate first trade market cap (assuming 1B supply)
-            tokens_bought = stats.get('tokens_bought', 0)
-            first_trade_rate = stats['sol_invested'] / tokens_bought if tokens_bought > 0 else 0
-            first_trade_mc = first_trade_rate * sol_price_usdt * 1_000_000_000  # 1B tokens
-            
-            # Format market cap display with appropriate suffix and color
-            if first_trade_mc > 0:
-                # Determine color based on market cap thresholds
-                if first_trade_mc >= 1_000_000_000:  # Over 1B
-                    mc_color = "red"
-                    mc_value = f"{first_trade_mc/1_000_000_000:.1f}B"
-                elif first_trade_mc >= 200_000_000:  # Over 200M
-                    mc_color = "yellow"
-                    mc_value = f"{first_trade_mc/1_000_000:.1f}M"
-                elif first_trade_mc >= 1_000_000:  # Over 1M
-                    mc_color = "green"
-                    mc_value = f"{first_trade_mc/1_000_000:.1f}M"
-                elif first_trade_mc >= 250_000:  # Over 250K
-                    mc_color = "green"
-                    mc_value = f"{first_trade_mc/1_000:.1f}K"
-                elif first_trade_mc >= 25_000:  # Over 50K
-                    mc_color = "yellow"
-                    mc_value = f"{first_trade_mc/1_000:.1f}K"
-                else:  # Under 25K
-                    mc_color = "red"
-                    mc_value = f"{first_trade_mc/1_000:.1f}K"
-                
-                mc_display = f"[{mc_color}]{mc_value}[/{mc_color}]"
-            else:
-                mc_display = "N/A"
-            
-            # Add to table
-            table.add_row(
-                format_token_address(token),
-                hold_time,
-                stats.get('last_trade').strftime('%Y-%m-%d %H:%M') if stats.get('last_trade') else 'N/A',
-                mc_display,
-                f"{stats.get('sol_invested', 0):.3f} ◎",
-                f"{stats.get('sol_received', 0):.3f} ◎",
-                f"[{profit_color}]{sol_profit:+.3f} ◎[/{profit_color}]",
-                f"{remaining_value:.3f} ◎",
-                f"[{total_profit_color}]{total_token_profit:+.3f} ◎[/{total_profit_color}]",
-                token_price_display,
-                str(token_trades)
-            )
-            
             # Write to CSV (keep both absolute and relative times)
             # Handle missing token information
             try:
@@ -1225,26 +1173,41 @@ def display_dex_trading_summary(trades: List[SolscanDefiActivity], console: Cons
                 last_trade_str = stats.get('last_trade').strftime('%Y-%m-%d %H:%M') if stats.get('last_trade') else 'N/A'
                 hold_time_str = format_time_difference(stats.get('first_trade'), stats.get('last_trade')) if stats.get('first_trade') and stats.get('last_trade') else 'N/A'
                 
-                f.write(f"{token}," + 
-                       f"{first_trade_str}," +
-                       f"{hold_time_str}," +
-                       f"{last_trade_str}," +
-                       f"{first_trade_mc:.2f}," +
-                       f"{stats.get('sol_invested', 0):.3f}," +
-                       f"{stats.get('sol_received', 0):.3f}," +
-                       f"{sol_profit:.3f}," +
-                       f"{'ERROR' if token_price_csv is None else remaining_value:.3f}," +
-                       f"{total_token_profit:.3f}," +
-                       f"{token_price_csv:.6f}," +
+                f.write(f"{token};" + 
+                       f"{first_trade_str};" +
+                       f"{hold_time_str};" +
+                       f"{last_trade_str};" +
+                       f"{first_trade_mc:.2f};" +
+                       f"{stats.get('sol_invested', 0):.3f};" +
+                       f"{stats.get('sol_received', 0):.3f};" +
+                       f"{format_number_for_csv(sol_profit)};" +  # Already includes fees
+                       f"{format_number_for_csv(stats.get('buy_fees', 0))};" +
+                       f"{format_number_for_csv(stats.get('sell_fees', 0))};" +
+                       f"{format_number_for_csv(stats.get('total_fees', 0))};" +
+                       f"{format_number_for_csv(remaining_value)};" +
+                       f"{format_number_for_csv(total_token_profit)};" +  # Already includes fees
+                       f"{format_number_for_csv(token_price_csv)};" +
                        f"{token_trades}\n")
             except Exception as e:
                 # If any error occurs while writing token data, write a safe fallback row
-                f.write(f"{token},N/A,N/A,N/A,0.00,{stats.get('sol_invested', 0):.3f},{stats.get('sol_received', 0):.3f}," +
-                       f"{sol_profit:.3f},ERROR,{total_token_profit:.3f},0.000000,{token_trades}\n")
+                f.write(f"{token};N/A;N/A;N/A;0.00;{stats.get('sol_invested', 0):.3f};{stats.get('sol_received', 0):.3f};" +
+                       f"{format_number_for_csv(sol_profit)};" +  # Already includes fees
+                       f"{format_number_for_csv(stats.get('buy_fees', 0))};{format_number_for_csv(stats.get('sell_fees', 0))};" +
+                       f"{format_number_for_csv(stats.get('total_fees', 0))};ERROR;{format_number_for_csv(total_token_profit)};" +  # Already includes fees
+                       f"0.000000;{token_trades}\n")
     
         # Add totals to CSV
-        total_overall_profit = total_profit + total_remaining
-        f.write(f"TOTAL,{total_invested:.3f},{total_received:.3f},{total_profit:.3f},{total_remaining:.3f},{total_overall_profit:.3f},,,{total_trades},\n")
+        total_overall_profit = total_profit + total_remaining  # Already includes fees
+        f.write(f"TOTAL;;;;" +
+                f";{format_number_for_csv(total_invested)};" +
+                f"{format_number_for_csv(total_received)};" +
+                f"{format_number_for_csv(total_profit)};" +  # Already includes fees
+                f"{format_number_for_csv(total_buy_fees)};" +
+                f"{format_number_for_csv(total_sell_fees)};" +
+                f"{format_number_for_csv(total_fees)};" +
+                f"{format_number_for_csv(total_remaining)};" +
+                f"{format_number_for_csv(total_overall_profit)};;" +  # Already includes fees
+                f"{total_trades}\n")
     
     # Add totals row to table
     profit_style = "green" if total_profit >= 0 else "red"
