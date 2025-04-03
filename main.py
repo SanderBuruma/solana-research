@@ -69,7 +69,7 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
         existing_data = []
         if os.path.exists(stats_file):
             with open(stats_file, 'r', newline='', encoding='utf-8') as f:
-                reader = csv.DictReader(f, delimiter=';')  # Using semicolon for LibreOffice compatibility
+                reader = csv.DictReader(f, delimiter='\t')  # Using tab delimiter
                 existing_data = list(reader)
         
         # Update or add new row
@@ -85,7 +85,7 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
         
         # Write all data back to file
         with open(stats_file, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=';')  # Using semicolon for LibreOffice compatibility
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter='\t')  # Using tab delimiter
             writer.writeheader()
             writer.writerows(existing_data)
         
@@ -819,6 +819,16 @@ def update_copy_traders_csv(copy_traders, new_entries, console):
     
     console.print(f"[green]Updated copy_traders.csv with {len(new_entries)} new/updated entries[/green]")
 
+def calculate_median_duration(time_diffs):
+    """Calculate the median duration from a list of time differences."""
+    if not time_diffs:
+        return 0
+    sorted_diffs = sorted(time_diffs)
+    mid = len(sorted_diffs) // 2
+    if len(sorted_diffs) % 2 == 0:
+        return (sorted_diffs[mid-1] + sorted_diffs[mid]) / 2
+    return sorted_diffs[mid]
+
 def option_4(api, console):
     """
     Detect wallets that bought the same tokens as the target wallet
@@ -869,9 +879,11 @@ def option_4(api, console):
         wallets_table.add_column("After (≤30s)", justify="right", style="green")
         wallets_table.add_column("Med Buy-in", justify="right", style="yellow")
         wallets_table.add_column("Avg Buy-in", justify="right", style="green")
+        wallets_table.add_column("Med Before", justify="right", style="yellow")
+        wallets_table.add_column("Med After", justify="right", style="green")
         
         # Dictionary to track wallet stats
-        wallets = {}  # Structure: {wallet_address: {'before': {'tokens': set(), 'buy_ins': []}, 'after': {'tokens': set(), 'buy_ins': []}}}
+        wallets = {}  # Structure: {wallet_address: {'before': {'tokens': set(), 'buy_ins': [], 'time_diffs': []}, 'after': {'tokens': set(), 'buy_ins': [], 'time_diffs': []}}}
         
         trades = api.get_dex_trading_history(target_wallet, quiet=True, defi_days=defi_days)
         
@@ -948,8 +960,8 @@ def option_4(api, console):
                     # Initialize wallet data if not seen before
                     if trade.from_address not in wallets:
                         wallets[trade.from_address] = {
-                            'before': {'tokens': set(), 'buy_ins': []},
-                            'after': {'tokens': set(), 'buy_ins': []}
+                            'before': {'tokens': set(), 'buy_ins': [], 'time_diffs': []},
+                            'after': {'tokens': set(), 'buy_ins': [], 'time_diffs': []}
                         }
                     
                     # Extract buy-in amount (SOL amount)
@@ -964,9 +976,11 @@ def option_4(api, console):
                     if -30 <= time_diff < 0:  # Bought before target (within 30 seconds)
                         wallets[trade.from_address]['before']['tokens'].add(token)
                         wallets[trade.from_address]['before']['buy_ins'].append(buy_in)
+                        wallets[trade.from_address]['before']['time_diffs'].append(time_diff)
                     elif 0 < time_diff <= 30:  # Bought after target (within 30 seconds)
                         wallets[trade.from_address]['after']['tokens'].add(token)
                         wallets[trade.from_address]['after']['buy_ins'].append(buy_in)
+                        wallets[trade.from_address]['after']['time_diffs'].append(time_diff)
         
         # Filter out wallets with no matches
         wallets = {k: v for k, v in wallets.items() if v['before'] or v['after']}
@@ -1010,12 +1024,18 @@ def option_4(api, console):
             after_avg = sum(after_buy_ins) / len(after_buy_ins) if after_buy_ins else 0
             avg_buy_in = (before_avg + after_avg) / 2 if before_buy_ins or after_buy_ins else 0
             
+            # Calculate median durations
+            before_median_duration = calculate_median_duration(data['before']['time_diffs'])
+            after_median_duration = calculate_median_duration(data['after']['time_diffs'])
+            
             wallets_table.add_row(
                 wallet,
                 str(before_count),
                 str(after_count),
                 f"{median_buy_in:.3f} ◎",
-                f"{avg_buy_in:.3f} ◎"
+                f"{avg_buy_in:.3f} ◎",
+                f"{before_median_duration:.1f}s",
+                f"{after_median_duration:.1f}s"
             )
             
             # Add to new_entries if meets criteria
@@ -1036,7 +1056,7 @@ def option_4(api, console):
         
         with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After', 'Median Buy-in', 'Average Buy-in'])
+            writer.writerow(['Wallet Address', 'Unique Tokens Before', 'Unique Tokens After', 'Median Buy-in', 'Average Buy-in', 'Med Before', 'Med After'])
             
             for wallet, data in sorted_wallets:
                 before_count = len(data['before']['tokens'])
@@ -1054,12 +1074,18 @@ def option_4(api, console):
                 after_avg = sum(after_buy_ins) / len(after_buy_ins) if after_buy_ins else 0
                 avg_buy_in = (before_avg + after_avg) / 2 if before_buy_ins or after_buy_ins else 0
                 
+                # Calculate median durations
+                before_median_duration = calculate_median_duration(data['before']['time_diffs'])
+                after_median_duration = calculate_median_duration(data['after']['time_diffs'])
+                
                 writer.writerow([
                     wallet,
                     before_count,
                     after_count,
                     format_number_for_csv(median_buy_in),
-                    format_number_for_csv(avg_buy_in)
+                    format_number_for_csv(avg_buy_in),
+                    format_number_for_csv(before_median_duration),
+                    format_number_for_csv(after_median_duration)
                 ])
         
         console.print(f"\n[yellow]Results for {target_wallet} saved to {csv_filename}[/yellow]")
