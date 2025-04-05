@@ -4,11 +4,13 @@ import csv
 import random
 import string
 import re
+import json
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime, timedelta
 
 # Third-party imports
 import cloudscraper
+import requests
 from rich.console import Console
 from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -276,17 +278,20 @@ class SolscanAPI:
 
     def _make_request(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """
-        Make a request to the Solscan API with retry logic and exponential backoff.
+        Make a request to the Solscan API with improved error handling and retry logic.
         
         Args:
-            endpoint: The API endpoint to request
+            endpoint (str): API endpoint to request
             
         Returns:
-            Optional[Dict[str, Any]]: The API response data or None if the request fails
+            Optional[Dict[str, Any]]: JSON response or None if request failed
+            
+        Raises:
+            requests.exceptions.HTTPError: If a 403 Forbidden response is received
         """
-        url = f"{self.base_url}/{endpoint}"
-        max_retries = 200
-        base_wait_time = 60  # Start with 1 minute wait
+        url = f'{self.base_url}/{endpoint}'
+        max_retries = 3
+        base_wait_time = 5
         wait_time = base_wait_time
         
         for attempt in range(max_retries):
@@ -295,18 +300,44 @@ class SolscanAPI:
                     response = self.scraper.get(url, headers=self.headers, proxies=self.proxies)
                 else:
                     response = self.scraper.get(url, headers=self.headers)
+                
+                # Check response status
                 response.raise_for_status()
-                return response.json()
-            except (cloudscraper.exceptions.CloudflareChallengeError) as e:
+                
+                # Check if response is empty
+                if not response.text:
+                    return None
+                
+                # Try to parse JSON
+                try:
+                    return response.json()
+                except json.JSONDecodeError:
+                    if attempt < max_retries - 1:
+                        wait_time = int(wait_time * 1.2)
+                        time.sleep(wait_time)
+                        continue
+                    return None
+                    
+            except requests.exceptions.HTTPError as e:
+                # Raise exception for 403 Forbidden responses
+                if e.response.status_code == 403:
+                    raise
+                # For other HTTP errors, retry if possible
                 if attempt < max_retries - 1:
-                    # Calculate wait time with 20% increase
                     wait_time = int(wait_time * 1.2)
-                    self.console.print(f"\n[yellow]Request failed (attempt {attempt + 1}/{max_retries}): {str(e)}[/yellow]")
-                    self.console.print(f"[yellow]Waiting {wait_time} seconds before retry...[/yellow]")
                     time.sleep(wait_time)
                 else:
-                    self.console.print(f"\n[red]Failed to fetch data after {max_retries} attempts: {str(e)}[/red]")
                     return None
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    wait_time = int(wait_time * 1.2)
+                    time.sleep(wait_time)
+                else:
+                    return None
+            except Exception:
+                return None
+        
+        return None
 
     def get_account_balance(self, address: str) -> Optional[float]:
         """
@@ -762,9 +793,29 @@ class SolscanAPI:
         return None
 
     def get_token_accounts(self, address: str) -> Optional[Dict[str, Any]]:
-        """Get token accounts for a given Solana address."""
+        """
+        Get token accounts for a given Solana address.
+        
+        Args:
+            address (str): Solana wallet address
+            
+        Returns:
+            Optional[Dict[str, Any]]: Token account data or empty response if no tokens found
+        """
         endpoint = f'account/tokenaccounts?address={address}&page=1&page_size=480&type=token&hide_zero=true'
-        return self._make_request(endpoint)
+        response = self._make_request(endpoint)
+        
+        # If request failed, return empty response structure
+        if response is None:
+            self.console.print("[yellow]No token data available, returning empty response[/yellow]")
+            return {
+                "success": True,
+                "data": {
+                    "tokenAccounts": []
+                }
+            }
+            
+        return response
 
 def display_transactions_table(transactions: List[Dict[str, Any]], console: Console, input_address: str):
     """
