@@ -1876,14 +1876,15 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         first_trade_mc = first_trade_rate * sol_price_usdt * 1_000_000_000
         
         # Track market cap at entry
+        mc_investment_percentage = 0
         if first_trade_mc > 0:
             market_entries.append(first_trade_mc)
             
             # Calculate % of market cap invested
             if sol_price_usdt > 0:
                 sol_value_usd = stats['sol_invested'] * sol_price_usdt
-                mc_percentage = (sol_value_usd / first_trade_mc) * 100
-                mc_investment_percentages.append(mc_percentage)
+                mc_investment_percentage = (sol_value_usd / first_trade_mc) * 100
+                mc_investment_percentages.append(mc_investment_percentage)
 
         # Calculate hold time
         if stats['first_trade']:
@@ -1922,7 +1923,8 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
             'remaining_value': remaining_value,
             'total_profit': total_token_profit,  # Now includes fees
             'token_price': stats['token_price_usdt'],
-            'trades': stats['trade_count']
+            'trades': stats['trade_count'],
+            'mc_investment_percentage': mc_investment_percentage  # Add investment % of MC at entry
         }
         token_data_list.append(token_data)
 

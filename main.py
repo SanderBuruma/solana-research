@@ -575,7 +575,7 @@ def option_3(api, console):
     table.add_column("Fees", justify="right", style="red")
     table.add_column("Remaining", justify="right", style="yellow")
     table.add_column("Total Profit", justify="right", style="green")
-    table.add_column("Token Price", justify="right", style="magenta")
+    table.add_column("MC Investment %", justify="right", style="magenta")
     table.add_column("Trades", justify="right", style="cyan")
     
     # Track totals
@@ -622,6 +622,13 @@ def option_3(api, console):
         total_sell_fees += token['sell_fees']
         total_fees += token['total_fees']
         
+        # Determine color for MC Investment %
+        mc_inv_color = "green"
+        if token['mc_investment_percentage'] > 1.0:
+            mc_inv_color = "yellow"
+        if token['mc_investment_percentage'] > 5.0:
+            mc_inv_color = "red"
+            
         table.add_row(
             format_token_address(token['address']),
             hold_time,
@@ -633,7 +640,7 @@ def option_3(api, console):
             f"{token['total_fees']:.3f} SOL",
             f"{token['remaining_value']:.3f} SOL",
             f"[{total_profit_color}]{token['total_profit']:+.3f} SOL[/{total_profit_color}]",  # Already includes fees
-            f"${token['token_price']:.6f}" if token['token_price'] > 0 else "N/A",
+            f"[{mc_inv_color}]{token['mc_investment_percentage']:.4f}%[/{mc_inv_color}]" if token['mc_investment_percentage'] > 0 else "N/A",
             str(token['trades'])
         )
 
@@ -726,7 +733,7 @@ def option_3(api, console):
 
     # Save to CSV
     with open(csv_filename, 'w', encoding='utf-8') as f:
-        f.write("Token;First Trade;Hold Time;Last Trade;First MC;SOL Invested;SOL Received;SOL Profit (after fees);Buy Fees;Sell Fees;Total Fees;Remaining Value;Total Profit (after fees);Token Price (USDT);Trades\n")
+        f.write("Token;First Trade;Hold Time;Last Trade;First MC;SOL Invested;SOL Received;SOL Profit (after fees);Buy Fees;Sell Fees;Total Fees;Remaining Value;Total Profit (after fees);MC Investment %;Trades\n")
         for token in token_data:
             hold_time_td = timedelta(seconds=token['hold_time'])
             hold_time = f"{hold_time_td.days}d {hold_time_td.seconds//3600}h {(hold_time_td.seconds%3600)//60}m"
@@ -743,7 +750,7 @@ def option_3(api, console):
                     f"{token['total_fees']:.3f};" +
                     f"{token['remaining_value']:.3f};" +
                     f"{token['total_profit']:.3f};" +  # Already includes fees
-                    f"{token['token_price']:.6f};" +
+                    f"{token['mc_investment_percentage']:.4f}%;" +
                     f"{token['trades']}\n")
 
         # Add totals to CSV
