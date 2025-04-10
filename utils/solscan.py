@@ -7,6 +7,7 @@ import re
 import json
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime, timedelta
+import sys
 
 # Third-party imports
 import cloudscraper
@@ -144,6 +145,9 @@ class SolscanAPI:
     def __init__(self):
         self.base_url = 'https://api-v2.solscan.io/v2'
         
+        # Check for cache-only mode
+        self.cache_only = '--cache-only' in sys.argv
+        
         # Preset headers as fallback
         self.preset_headers = {
             'accept': 'application/json, text/plain, */*',
@@ -181,7 +185,10 @@ class SolscanAPI:
             }
         else:
             self.proxies = None
-        
+            
+        if self.cache_only:
+            self.console.print("[yellow]Cache-only mode enabled - no API requests will be made[/yellow]")
+
     def _parse_request_ps1(self) -> Optional[Dict[str, str]]:
         """
         Parse request.ps1 file to extract headers and cookies.
@@ -289,6 +296,13 @@ class SolscanAPI:
         Raises:
             requests.exceptions.HTTPError: If a 403 Forbidden response is received
         """
+        # Return empty results in cache-only mode
+        if self.cache_only:
+            return {
+                'success': True,
+                'data': []
+            }
+            
         url = f'{self.base_url}/{endpoint}'
         max_retries = 3
         base_wait_time = 5
@@ -484,9 +498,13 @@ class SolscanAPI:
         # Get total number of transactions
         endpoint = f'account/activity/dextrading/total?address={address}'
         total_data = self._make_request(endpoint)
-        total_trades = total_data.get('data', 0) if total_data and total_data.get('success') else 0
-        if total_trades > 10100:
-            total_trades = 10100
+        total_trades = 0
+        if total_data and total_data.get('success'):
+            total_trades = total_data.get('data', 0)
+            if isinstance(total_trades, list):
+                total_trades = len(total_trades)
+            if total_trades > 10100:
+                total_trades = 10100
         
         if total_trades == 0:
             # Sort all trades by block_time, newest first
@@ -778,6 +796,15 @@ class SolscanAPI:
         Get token price and metadata from Solscan API
         Returns a dictionary containing price in USDT and other token information
         """
+        # Return 0 price in cache-only mode
+        if self.cache_only:
+            return {
+                'price_usdt': 0,
+                'decimals': 0,
+                'name': '',
+                'symbol': ''
+            }
+            
         data = self._make_request(f'account?address={token_address}')
         if data and data.get('success'):
             metadata = data.get('metadata', {})
