@@ -36,7 +36,8 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
     fieldnames = [
         'Timestamp', 'Address', '24H ROI %', '7D ROI %', '30D ROI %', '60D ROI %', 
         '60D ROI', 'Win Rate', 'Unique Tokens Traded', 'Median Investment', 
-        'Med ROI %', 'ROI % Std Dev', 'Median Hold Time', 'Median Market Entry', 'Median Market Cap % at Entry'
+        'Med ROI %', 'ROI % Std Dev', 'Median Hold Time', 'Median Market Entry', 
+        'Median Market Cap % at Entry', 'Median Profit', 'Median Loss'
     ]
     
     # Create reports directory if it doesn't exist
@@ -61,7 +62,9 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
         'ROI % Std Dev': format_number_for_csv(tx_summary['roi_std_dev']),
         'Median Hold Time': format_seconds(tx_summary['median_hold_time']),
         'Median Market Entry': format_mc(tx_summary['median_market_entry']),
-        'Median Market Cap % at Entry': format_number_for_csv(tx_summary['median_mc_percentage'])
+        'Median Market Cap % at Entry': format_number_for_csv(tx_summary['median_mc_percentage']),
+        'Median Profit': format_number_for_csv(tx_summary['median_profit']),
+        'Median Loss': format_number_for_csv(tx_summary['median_loss'])
     }
     
     try:

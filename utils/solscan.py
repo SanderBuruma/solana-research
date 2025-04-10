@@ -1845,6 +1845,8 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
     roi_percentages = []  # Add list to track individual token ROI percentages
     market_entries = []   # Track market cap at entry for median calculation
     mc_investment_percentages = []  # Track % of market cap invested at entry
+    token_profits = []  # Track individual token profits
+    token_losses = []   # Track individual token losses
 
     for token, stats in token_stats.items():
         if is_sol_token(token):
@@ -1865,6 +1867,12 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         # Calculate profits including fees
         total_token_profit = sol_profit + remaining_value
         
+        # Track individual token profits/losses
+        if total_token_profit > 0:
+            token_profits.append(total_token_profit)
+        elif total_token_profit < 0:
+            token_losses.append(abs(total_token_profit))
+
         # Calculate ROI percentage for this token and add to list
         if stats['sol_invested'] > 0:
             roi_percent = (total_token_profit / stats['sol_invested']) * 100
@@ -1995,6 +2003,10 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         squared_diff_sum = sum((x - mean_roi) ** 2 for x in roi_percentages)
         roi_std_dev = (squared_diff_sum / len(roi_percentages)) ** 0.5
     
+    # Calculate median profit and loss
+    median_profit = sorted(token_profits)[len(token_profits)//2] if token_profits else 0
+    median_loss = sorted(token_losses)[len(token_losses)//2] if token_losses else 0
+
     # Prepare transaction summary
     total_defi_txs = len(trades)
     non_sol_txs = sum(1 for trade in trades if 
@@ -2017,11 +2029,13 @@ def analyze_trades(trades: List[SolscanDefiActivity], console: Console) -> Tuple
         'win_rate': win_rate,
         'win_rate_ratio': f"{len(profits)}/{total_tokens}",
         'median_investment': median_investment,
-        'median_roi_percent': median_roi_percent,  # Add new field for median ROI %
-        'roi_std_dev': roi_std_dev,  # Add standard deviation of ROI %
+        'median_roi_percent': median_roi_percent,
+        'roi_std_dev': roi_std_dev,
         'median_hold_time': median_hold_time.total_seconds(),
         'median_market_entry': median_market_entry,
-        'median_mc_percentage': median_mc_percentage
+        'median_mc_percentage': median_mc_percentage,
+        'median_profit': median_profit,  # Add median profit
+        'median_loss': median_loss      # Add median loss
     }
 
     return token_data_list, roi_data, tx_summary
