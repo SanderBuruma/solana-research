@@ -95,22 +95,52 @@ def update_stats_csv(timestamp: str, address: str, roi_data: dict, tx_summary: d
         console.print(f"[red]Error updating stats.csv: {str(e)}[/red]")
         raise e
 
+def read_addresses_from_file(file_path: str) -> list[str]:
+    """
+    Read addresses from a .txt file.
+    
+    Args:
+        file_path (str): Path to the .txt file
+        
+    Returns:
+        list[str]: List of addresses found in the file
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            # Find all matches of the regex pattern in the file content
+            addresses = re.findall(r'[a-zA-Z0-9]{43,44}', content)
+            return addresses
+    except Exception as e:
+        print(f"Error reading file {file_path}: {str(e)}")
+        return []
+
 def get_addresses_from_args(args) -> list[str]:
     """
-    Get addresses from command line arguments.
+    Get addresses from command line arguments and .txt files.
     
     Args:
         args (List[str]): Command line arguments
-
+        
+    Returns:
+        list[str]: List of unique addresses found in arguments and .txt files
     """
     args = sys.argv[2:]
     addresses = []
+    
     for arg in args:
-        # find all matches of the regex pattern in each arg
-        m = re.findall(r'[a-zA-Z0-9]{43,44}', arg)
-        if m:
-            print(f"Found {len(m)} addresses in {arg}")
-            addresses.extend(m)
+        if arg.endswith('.txt'):
+            # Read addresses from .txt file
+            file_addresses = read_addresses_from_file(arg)
+            if file_addresses:
+                print(f"Found {len(file_addresses)} addresses in file {arg}")
+                addresses.extend(file_addresses)
+        else:
+            # Find all matches of the regex pattern in each arg
+            m = re.findall(r'[a-zA-Z0-9]{43,44}', arg)
+            if m:
+                print(f"Found {len(m)} addresses in {arg}")
+                addresses.extend(m)
 
     # Deduplicate addresses
     return list(set(addresses))
