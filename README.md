@@ -37,6 +37,10 @@ A powerful Python-based command-line tool for comprehensive analysis of Solana b
   - Makes a list of copy traders and those they copy. 
   - 50 tokens recently traded by the target are analyzed 
   - A list is returned of addresses that traded the same token before or after the target.
+  - Tracks median buy duration for trades before and after target trades
+  - Calculates and displays median and average buy-in amounts
+  - Provides detailed timing analysis with median duration metrics
+  - Saves comprehensive CSV reports with timing and investment data
 
 - **-5 <address> [<address> ...]**: Comparative DeFi Summary
   - Analyze multiple wallets simultaneously
@@ -191,23 +195,25 @@ python main.py -4 AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY --defi_days=7
 Example output:
 ```
 Potential Copy Traders of AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY
-┌────────────────────────────────────┬───────────┬──────────────┬──────────────────┐
-│ Wallet Address                      │ Copy Count │ Tokens       │ Avg Time Delay (s) │
-├────────────────────────────────────┼───────────┼──────────────┼──────────────────┤
-│ 5K3XU2uxuH962Ru2kZ3WXzgsMFZDTy7FHXZMQgowVqEA │ 7         │ 5 unique tokens │ 12.45              │
-│ D4SuNZhPPArHpoH1LzrBTYgm3r3eSf3WWDoJJAGrdmXv │ 4         │ 4 unique tokens │ 6.32               │
-│ 8FE27ioQh5H4HpUts2MauL1xmzUtEWnPzH9iXptVrYZZ │ 3         │ 3 unique tokens │ 18.91              │
-└────────────────────────────────────┴───────────┴──────────────┴──────────────────┘
+┌────────────────────────────────────┬───────────┬──────────────┬──────────────────┬──────────────┬──────────────┬──────────────┐
+│ Wallet Address                      │ Before    │ After        │ Median Buy-in    │ Avg Buy-in   │ Med Before   │ Med After    │
+├────────────────────────────────────┼───────────┼──────────────┼──────────────────┼──────────────┼──────────────┼──────────────┤
+│ 5K3XU2uxuH962Ru2kZ3WXzgsMFZDTy7FHXZMQgowVqEA │ 7         │ 5            │ 0.123 ◎        │ 0.145 ◎      │ 12.45s       │ 8.32s        │
+│ D4SuNZhPPArHpoH1LzrBTYgm3r3eSf3WWDoJJAGrdmXv │ 4         │ 4            │ 0.089 ◎        │ 0.102 ◎      │ 6.32s        │ 7.45s        │
+│ 8FE27ioQh5H4HpUts2MauL1xmzUtEWnPzH9iXptVrYZZ │ 3         │ 3            │ 0.156 ◎        │ 0.178 ◎      │ 18.91s       │ 15.23s       │
+└────────────────────────────────────┴───────────┴──────────────┴──────────────────┴──────────────┴──────────────┴──────────────┘
 
 Results for AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY saved to reports/AqEvrwvsNad9ftZaPneUrjTcuY2o7RGkeuqknbT91VnY/same_token_traders_2024-06-15-12-20.csv
 ```
 
 This command will:
-- Analyze each target wallet's first 10 token buys
+- Analyze each target wallet's first 50 token buys
 - Find other wallets that bought the same tokens within 30 seconds
+- Track median buy duration for trades before and after target trades
+- Calculate median and average buy-in amounts
 - Display wallets that copied more than once
-- Show the number of tokens copied and average time delay
-- Save results to a CSV file for each wallet for further analysis
+- Show the number of tokens copied and timing metrics
+- Save detailed results to a CSV file for each wallet for further analysis
 
 ### Find Copy Trading Sources (-7)
 
