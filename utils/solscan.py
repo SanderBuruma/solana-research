@@ -796,8 +796,8 @@ class SolscanAPI:
         Get token price and metadata from Solscan API
         Returns a dictionary containing price in USDT and other token information
         """
-        # Return 0 price in cache-only mode
-        if self.cache_only:
+        # Return 0 price in cache-only mode or --no-token-value mode
+        if self.cache_only or '--no-token-value' in sys.argv or '--cache-only' in sys.argv:
             return {
                 'price_usdt': 0,
                 'decimals': 0,
