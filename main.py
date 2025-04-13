@@ -1185,9 +1185,6 @@ def option_5(api, console):
     # Create the reports directory if it doesn't exist
     os.makedirs('reports', exist_ok=True)
     
-    # Create master CSV filename
-    master_csv_filename = generate_aggregate_filename(addresses, "option5-master")
-    
     # Store all results for master CSV
     all_results = []
     
@@ -1242,17 +1239,6 @@ def option_5(api, console):
             total_fees = sum(token['total_fees'] for token in token_data)
             total_buy_fees = sum(token['buy_fees'] for token in token_data)
             total_sell_fees = sum(token['sell_fees'] for token in token_data)
-
-            def format_duration(td):
-                days = td.days
-                hours = td.seconds // 3600
-                minutes = (td.seconds % 3600) // 60
-                if days > 0:
-                    return f"{days}d {hours}h {minutes}m"
-                elif hours > 0:
-                    return f"{hours}h {minutes}m"
-                else:
-                    return f"{minutes}m"
 
             # Create result record
             result = {
@@ -1318,28 +1304,6 @@ def option_5(api, console):
         # Print the batch table
         console.print(summary_table)
         
-        # Save batch to CSV
-        if batch_results:
-            batch_csv_filename = generate_aggregate_filename(batch_addresses, "option5", batch_idx=batch_idx)
-            
-            with open(batch_csv_filename, 'w', newline='', encoding='utf-8') as f:
-                writer = csv.DictWriter(f, fieldnames=batch_results[0].keys(), delimiter=';')  # Using semicolon for LibreOffice compatibility
-                writer.writeheader()
-                writer.writerows(batch_results)
-            
-            console.print(f"\n[yellow]Batch {batch_idx} results saved to {batch_csv_filename}[/yellow]")
-    
-    # Save master CSV with all results
-    if all_results:
-        with open(master_csv_filename, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=all_results[0].keys(), delimiter=';')  # Using semicolon for LibreOffice compatibility
-            writer.writeheader()
-            writer.writerows(all_results)
-        
-        console.print(f"\n[bold green]All results saved to {master_csv_filename}[/bold green]")
-    else:
-        console.print("\n[red]No results to save[/red]")
-
 def option_6(api, console):
     if len(sys.argv) < 3:
         print("Error: One token contract address is required for option -6")
